@@ -84,6 +84,7 @@ func (s *Settler) settle(ctx context.Context, m scanner.Market) {
 		return
 	}
 
+	fmt.Printf("settled market %s tx=%s\n", m.ID, txHash)
 	if err := s.store.MarkSettled(ctx, m.ID, txHash); err != nil {
 		fmt.Printf("failed to record settlement for market %s: %v\n", m.ID, err)
 	}

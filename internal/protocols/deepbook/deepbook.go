@@ -2,8 +2,12 @@ package deepbook
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	"keeper/internal/scanner"
@@ -11,19 +15,30 @@ import (
 	"github.com/block-vision/sui-go-sdk/models"
 	"github.com/block-vision/sui-go-sdk/signer"
 	suiclient "github.com/block-vision/sui-go-sdk/sui"
+	"github.com/block-vision/sui-go-sdk/transaction"
 )
 
 const (
-	PredictPkg      = "0xf5ea2b3749c65d6e56507cc35388719aadb28f9cab873696a2f8687f5c785138"
-	PredictObjectID = "0xc8736204d12f0a7277c86388a68bf8a194b0a14c5538ad13f22cbd8e2a38028a"
-	dUSDCType       = "0xe95040085976bfd54a1a07225cd46c8a2b4e8e2b6732f140a0fc49850ba73e1a::dusdc::DUSDC"
+	PredictPkg                  = "0xf5ea2b3749c65d6e56507cc35388719aadb28f9cab873696a2f8687f5c785138"
+	PredictObjectID             = "0xc8736204d12f0a7277c86388a68bf8a194b0a14c5538ad13f22cbd8e2a38028a"
+	predictInitialSharedVersion = uint64(829857685)
+	clockObjectID               = "0x6"
+	clockInitialSharedVersion   = uint64(1)
+	serverURL                   = "https://predict-server.testnet.mystenlabs.com"
 
-	positionMintedEvent = PredictPkg + "::predict::PositionMinted"
+	dUSDCAddress = "0xe95040085976bfd54a1a07225cd46c8a2b4e8e2b6732f140a0fc49850ba73e1a"
+	dUSDCModule  = "dusdc"
+	dUSDCName    = "DUSDC"
 )
 
 type Protocol struct {
-	client suiclient.ISuiAPI
-	signer *signer.Signer
+	client    suiclient.ISuiAPI
+	rawClient *suiclient.Client
+	signer    *signer.Signer
+	http      *http.Client
+
+	isvCache sync.Map
+	settleMu sync.Mutex // serializes PTB execution so gas coin version stays fresh
 }
 
 func New(rpcURL, suiPrivKey string) (*Protocol, error) {
@@ -31,113 +46,287 @@ func New(rpcURL, suiPrivKey string) (*Protocol, error) {
 	if err != nil {
 		return nil, fmt.Errorf("load signer: %w", err)
 	}
+	iface := suiclient.NewSuiClient(rpcURL)
+	raw := iface.(*suiclient.Client)
 	return &Protocol{
-		client: suiclient.NewSuiClient(rpcURL),
-		signer: s,
+		client:    iface,
+		rawClient: raw,
+		signer:    s,
+		http:      &http.Client{},
 	}, nil
 }
 
-// FetchMarkets discovers oracle IDs via PositionMinted events, then fetches
-// each OracleSVI object and returns ones that are expired and unsettled.
-func (p *Protocol) FetchMarkets(ctx context.Context) ([]scanner.Market, error) {
-	rsp, err := p.client.SuiXQueryEvents(ctx, models.SuiXQueryEventsRequest{
-		SuiEventFilter: map[string]interface{}{
-			"MoveEventType": positionMintedEvent,
-		},
-		Limit:           50,
-		DescendingOrder: false,
-	})
+type apiOracle struct {
+	OracleID        string  `json:"oracle_id"`
+	Status          string  `json:"status"`
+	SettlementPrice *uint64 `json:"settlement_price"`
+}
+
+type apiManager struct {
+	ManagerID string `json:"manager_id"`
+}
+
+type apiPositions struct {
+	Minted   []apiPosition `json:"minted"`
+	Redeemed []apiPosition `json:"redeemed"`
+}
+
+type apiPosition struct {
+	OracleID  string `json:"oracle_id"`
+	ManagerID string `json:"manager_id"`
+	Expiry    uint64 `json:"expiry"`
+	Strike    uint64 `json:"strike"`
+	IsUp      bool   `json:"is_up"`
+	Quantity  uint64 `json:"quantity"`
+}
+
+func (p *Protocol) get(ctx context.Context, path string, out interface{}) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, serverURL+path, nil)
 	if err != nil {
-		return nil, fmt.Errorf("query PositionMinted events: %w", err)
+		return err
 	}
+	resp, err := p.http.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(body, out)
+}
 
-	// deduplicate oracle IDs
-	seen := make(map[string]bool)
-	var oracleIDs []string
-	for _, event := range rsp.Data {
-		id, ok := event.ParsedJson["oracle_id"].(string)
-		if !ok || seen[id] {
-			continue
+// FetchMarkets queries the predict server for settled oracles with unredeemed positions.
+func (p *Protocol) FetchMarkets(ctx context.Context) ([]scanner.Market, error) {
+	var oracles []apiOracle
+	if err := p.get(ctx, "/oracles", &oracles); err != nil {
+		return nil, fmt.Errorf("fetch oracles: %w", err)
+	}
+	settled := make(map[string]bool)
+	for _, o := range oracles {
+		if o.Status == "settled" && o.SettlementPrice != nil {
+			settled[o.OracleID] = true
 		}
-		seen[id] = true
-		oracleIDs = append(oracleIDs, id)
+	}
+	fmt.Printf("settled oracles: %d / %d\n", len(settled), len(oracles))
+
+	var managers []apiManager
+	if err := p.get(ctx, "/managers", &managers); err != nil {
+		return nil, fmt.Errorf("fetch managers: %w", err)
 	}
 
-	fmt.Printf("found %d unique oracle IDs from events\n", len(oracleIDs))
-
-	nowMs := time.Now().UnixMilli()
 	var markets []scanner.Market
-
-	for _, id := range oracleIDs {
-		obj, err := p.client.SuiGetObject(ctx, models.SuiGetObjectRequest{
-			ObjectId: id,
-			Options: models.SuiObjectDataOptions{
-				ShowContent: true,
-			},
-		})
-		if err != nil {
-			fmt.Printf("fetch oracle %s: %v\n", id, err)
+	for _, mgr := range managers {
+		var pos apiPositions
+		if err := p.get(ctx, "/managers/"+mgr.ManagerID+"/positions", &pos); err != nil {
+			continue
+		}
+		if len(pos.Minted) == 0 {
 			continue
 		}
 
-		if obj.Data == nil || obj.Data.Content == nil {
-			continue
+		type posKey struct {
+			oracleID string
+			strike   uint64
+			isUp     bool
+		}
+		redeemedCount := make(map[posKey]int)
+		for _, r := range pos.Redeemed {
+			redeemedCount[posKey{r.OracleID, r.Strike, r.IsUp}]++
 		}
 
-		fields := obj.Data.Content.Fields
-
-		expiryStr, _ := fields["expiry"].(string)
-		expiryMs, err := strconv.ParseInt(expiryStr, 10, 64)
-		if err != nil {
-			continue
-		}
-
-		// settlement_price is Option<u64>: nil means None (unsettled)
-		settled := fields["settlement_price"] != nil
-
-		fmt.Printf("oracle %s — expiry: %s, settled: %v\n", id, time.UnixMilli(expiryMs).Format(time.RFC3339), settled)
-
-		if expiryMs < nowMs && !settled {
-			fmt.Printf("  → expired and unsettled, queuing for settlement\n")
+		for _, mp := range pos.Minted {
+			if !settled[mp.OracleID] {
+				continue
+			}
+			k := posKey{mp.OracleID, mp.Strike, mp.IsUp}
+			if redeemedCount[k] > 0 {
+				redeemedCount[k]--
+				continue
+			}
+			id := mp.OracleID + "/" + mgr.ManagerID + "/" +
+				strconv.FormatUint(mp.Strike, 10) + "/" +
+				strconv.FormatBool(mp.IsUp)
 			markets = append(markets, scanner.Market{
-				ID:         id,
-				ExpiryTime: time.UnixMilli(expiryMs),
-				Settled:    false,
-				Type:       "binary",
+				ID:        id,
+				OracleID:  mp.OracleID,
+				ManagerID: mgr.ManagerID,
+				ExpiryMs:  mp.Expiry,
+				Strike:    mp.Strike,
+				IsUp:      mp.IsUp,
+				Quantity:  mp.Quantity,
 			})
 		}
 	}
 
+	fmt.Printf("redeemable positions: %d\n", len(markets))
 	return markets, nil
 }
 
-// Settle calls redeem_permissionless for a settled oracle.
-// Note: the oracle must already have settlement_price set by an authorized party.
-func (p *Protocol) Settle(ctx context.Context, m scanner.Market) (string, error) {
-	rsp, err := p.client.MoveCall(ctx, models.MoveCallRequest{
-		Signer:          p.signer.Address,
-		PackageObjectId: PredictPkg,
-		Module:          "predict",
-		Function:        "redeem_permissionless",
-		TypeArguments:   []interface{}{dUSDCType},
-		Arguments: []interface{}{
-			PredictObjectID,
-			m.ID,
+// initialSharedVersion fetches (and caches) the initial_shared_version for a shared object.
+func (p *Protocol) initialSharedVersion(ctx context.Context, objectID string) (uint64, error) {
+	if v, ok := p.isvCache.Load(objectID); ok {
+		return v.(uint64), nil
+	}
+	resp, err := p.client.SuiGetObject(ctx, models.SuiGetObjectRequest{
+		ObjectId: objectID,
+		Options:  models.SuiObjectDataOptions{ShowOwner: true},
+	})
+	if err != nil {
+		return 0, fmt.Errorf("get object %s: %w", objectID, err)
+	}
+	if resp.Data == nil {
+		return 0, fmt.Errorf("object %s not found", objectID)
+	}
+	ownerBytes, err := json.Marshal(resp.Data.Owner)
+	if err != nil {
+		return 0, err
+	}
+	var owner models.ObjectOwner
+	if err := json.Unmarshal(ownerBytes, &owner); err != nil {
+		return 0, err
+	}
+	isv := owner.Shared.InitialSharedVersion
+	p.isvCache.Store(objectID, isv)
+	return isv, nil
+}
+
+// sharedArg builds a fully-resolved shared object CallArg.
+func sharedArg(objectID string, isv uint64, mutable bool) (transaction.CallArg, error) {
+	addrBytes, err := transaction.ConvertSuiAddressStringToBytes(models.SuiAddress(objectID))
+	if err != nil {
+		return transaction.CallArg{}, err
+	}
+	return transaction.CallArg{
+		Object: &transaction.ObjectArg{
+			SharedObject: &transaction.SharedObjectRef{
+				ObjectId:             *addrBytes,
+				InitialSharedVersion: isv,
+				Mutable:              mutable,
+			},
 		},
-		GasBudget: "10000000",
-	})
+	}, nil
+}
+
+// dUSDCTypeTag builds the TypeTag for the dUSDC coin type.
+func dUSDCTypeTag() (transaction.TypeTag, error) {
+	addrBytes, err := transaction.ConvertSuiAddressStringToBytes(models.SuiAddress(dUSDCAddress))
 	if err != nil {
-		return "", fmt.Errorf("move call: %w", err)
+		return transaction.TypeTag{}, fmt.Errorf("parse dUSDC address: %w", err)
+	}
+	return transaction.TypeTag{
+		Struct: &transaction.StructTag{
+			Address:    *addrBytes,
+			Module:     dUSDCModule,
+			Name:       dUSDCName,
+			TypeParams: []*transaction.TypeTag{},
+		},
+	}, nil
+}
+
+// Settle builds a 2-step PTB: market_key::new → predict::redeem_permissionless.
+func (p *Protocol) Settle(ctx context.Context, m scanner.Market) (string, error) {
+	p.settleMu.Lock()
+	defer p.settleMu.Unlock()
+
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	// Resolve initial shared versions for oracle and manager (predict is hardcoded).
+	oracleISV, err := p.initialSharedVersion(ctx, m.OracleID)
+	if err != nil {
+		return "", fmt.Errorf("oracle ISV: %w", err)
+	}
+	managerISV, err := p.initialSharedVersion(ctx, m.ManagerID)
+	if err != nil {
+		return "", fmt.Errorf("manager ISV: %w", err)
 	}
 
-	result, err := p.client.SignAndExecuteTransactionBlock(ctx, models.SignAndExecuteTransactionBlockRequest{
-		TxnMetaData: rsp,
-		PriKey:      p.signer.PriKey,
-		RequestType: "WaitForLocalExecution",
-	})
+	predictArg, err := sharedArg(PredictObjectID, predictInitialSharedVersion, true)
 	if err != nil {
-		return "", fmt.Errorf("execute tx: %w", err)
+		return "", err
+	}
+	managerArg, err := sharedArg(m.ManagerID, managerISV, true)
+	if err != nil {
+		return "", err
+	}
+	oracleArg, err := sharedArg(m.OracleID, oracleISV, false)
+	if err != nil {
+		return "", err
+	}
+	clockArg, err := sharedArg(clockObjectID, clockInitialSharedVersion, false)
+	if err != nil {
+		return "", err
 	}
 
-	return result.Digest, nil
+	typeTag, err := dUSDCTypeTag()
+	if err != nil {
+		return "", err
+	}
+
+	// Fetch gas coin.
+	coinsResp, err := p.client.SuiXGetCoins(ctx, models.SuiXGetCoinsRequest{
+		Owner:    p.signer.Address,
+		CoinType: "0x2::sui::SUI",
+		Limit:    1,
+	})
+	if err != nil {
+		return "", fmt.Errorf("fetch gas coins: %w", err)
+	}
+	if len(coinsResp.Data) == 0 {
+		return "", fmt.Errorf("no SUI coins for gas")
+	}
+	gasRef, err := transaction.NewSuiObjectRef(
+		models.SuiAddress(coinsResp.Data[0].CoinObjectId),
+		coinsResp.Data[0].Version,
+		models.ObjectDigest(coinsResp.Data[0].Digest),
+	)
+	if err != nil {
+		return "", fmt.Errorf("build gas ref: %w", err)
+	}
+
+	tx := transaction.NewTransaction()
+	tx.SetSigner(p.signer)
+	tx.SetSuiClient(p.rawClient)
+	tx.SetGasBudget(50_000_000)
+	tx.SetGasPayment([]transaction.SuiObjectRef{*gasRef})
+
+	pkg := models.SuiAddress(PredictPkg)
+
+	// Step 1: build MarketKey
+	// m.OracleID must be a plain string so Pure's type assertion succeeds and
+	// encodes it as 32 raw bytes (address) — not as a length-prefixed ASCII string.
+	key := tx.MoveCall(pkg, "market_key", "new",
+		[]transaction.TypeTag{},
+		[]transaction.Argument{
+			tx.Pure(m.OracleID),
+			tx.Pure(m.ExpiryMs),
+			tx.Pure(m.Strike),
+			tx.Pure(m.IsUp),
+		},
+	)
+
+	// Step 2: redeem_permissionless<dUSDC>
+	tx.MoveCall(pkg, "predict", "redeem_permissionless",
+		[]transaction.TypeTag{typeTag},
+		[]transaction.Argument{
+			tx.Object(predictArg),
+			tx.Object(managerArg),
+			tx.Object(oracleArg),
+			key,
+			tx.Pure(m.Quantity),
+			tx.Object(clockArg),
+		},
+	)
+
+	rsp, err := tx.Execute(ctx, models.SuiTransactionBlockOptions{ShowEffects: true}, "WaitForLocalExecution")
+	if err != nil {
+		return "", fmt.Errorf("execute ptb: %w", err)
+	}
+	if rsp.Effects.Status.Status != "success" {
+		return "", fmt.Errorf("ptb failed on chain: %s", rsp.Effects.Status.Error)
+	}
+
+	return rsp.Digest, nil
 }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -14,9 +15,13 @@ import (
 	"keeper/internal/scanner"
 	"keeper/internal/settler"
 	"keeper/internal/store"
+
+	"github.com/joho/godotenv"
 )
 
 func main() {
+	_ = godotenv.Load()
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -39,7 +44,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	q := queue.NewKafka([]string{"localhost:9092"}, "markets.expired")
+	brokers := strings.Split(os.Getenv("KAFKA_BROKERS"), ",")
+	q := queue.NewKafka(brokers, "markets.redeemable")
 	s := scanner.New(protocol, 30*time.Second)
 	set := settler.New(protocol, st, 5)
 	e := engine.New(s, q, set)

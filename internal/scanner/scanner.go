@@ -5,12 +5,15 @@ import (
 	"time"
 )
 
+// Market represents a single redeemable position on a settled oracle.
 type Market struct {
-	ID          string
-	ExpiryTime  time.Time
-	Settled     bool
-	StrikePrice float64
-	Type        string // "binary" or "range"
+	ID        string // composite: oracleID/managerID/strike/isUp
+	OracleID  string
+	ManagerID string
+	ExpiryMs  uint64
+	Strike    uint64
+	IsUp      bool
+	Quantity  uint64
 }
 
 // Protocol is the chain-specific layer. The deepbook package will implement this.
@@ -51,12 +54,10 @@ func (s *Scanner) Start(ctx context.Context) <-chan Market {
 					continue
 				}
 				for _, m := range markets {
-					if m.ExpiryTime.Before(time.Now()) && !m.Settled {
-						select {
-						case out <- m:
-						case <-ctx.Done():
-							return
-						}
+					select {
+					case out <- m:
+					case <-ctx.Done():
+						return
 					}
 				}
 			}
