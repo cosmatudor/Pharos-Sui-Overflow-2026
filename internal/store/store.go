@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -55,7 +56,9 @@ func (s *Store) MarkInFlight(ctx context.Context, marketID string) (bool, error)
 	tag, err := s.pool.Exec(ctx, `
 		INSERT INTO markets (id, status)
 		VALUES ($1, 'in_flight')
-		ON CONFLICT (id) DO NOTHING
+		ON CONFLICT (id) DO UPDATE
+			SET status = 'in_flight', updated_at = NOW()
+			WHERE markets.status = 'failed'
 	`, marketID)
 	if err != nil {
 		return false, err
@@ -77,4 +80,18 @@ func (s *Store) MarkFailed(ctx context.Context, marketID string, reason string) 
 		WHERE id = $1
 	`, marketID, reason)
 	return err
+}
+
+// ReclaimStale resets in_flight claims that haven't been updated within olderThan
+// back to failed, so another keeper instance can retry them.
+func (s *Store) ReclaimStale(ctx context.Context, olderThan time.Duration) (int64, error) {
+	tag, err := s.pool.Exec(ctx, `
+		UPDATE markets
+		SET status = 'failed', failure_reason = 'stale_in_flight', updated_at = NOW()
+		WHERE status = 'in_flight' AND updated_at < NOW() - $1::interval
+	`, olderThan)
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
 }

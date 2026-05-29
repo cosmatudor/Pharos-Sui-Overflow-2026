@@ -48,7 +48,7 @@ func main() {
 	q := queue.NewKafka(brokers, "markets.redeemable")
 	s := scanner.New(protocol, 30*time.Second)
 	set := settler.New(protocol, st, 5)
-	e := engine.New(s, q, set)
+	e := engine.New(s, q, set, st)
 
 	fmt.Println("keeper running")
 	e.Run(ctx)

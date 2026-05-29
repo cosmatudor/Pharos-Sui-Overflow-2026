@@ -25,10 +25,6 @@ const (
 	clockObjectID               = "0x6"
 	clockInitialSharedVersion   = uint64(1)
 	serverURL                   = "https://predict-server.testnet.mystenlabs.com"
-
-	dUSDCAddress = "0xe95040085976bfd54a1a07225cd46c8a2b4e8e2b6732f140a0fc49850ba73e1a"
-	dUSDCModule  = "dusdc"
-	dUSDCName    = "DUSDC"
 )
 
 type Protocol struct {
@@ -74,6 +70,7 @@ type apiPositions struct {
 type apiPosition struct {
 	OracleID  string `json:"oracle_id"`
 	ManagerID string `json:"manager_id"`
+	Trader    string `json:"trader"`
 	Expiry    uint64 `json:"expiry"`
 	Strike    uint64 `json:"strike"`
 	IsUp      bool   `json:"is_up"`
@@ -152,6 +149,7 @@ func (p *Protocol) FetchMarkets(ctx context.Context) ([]scanner.Market, error) {
 				ID:        id,
 				OracleID:  mp.OracleID,
 				ManagerID: mgr.ManagerID,
+				Trader:    mp.Trader,
 				ExpiryMs:  mp.Expiry,
 				Strike:    mp.Strike,
 				IsUp:      mp.IsUp,
@@ -211,15 +209,20 @@ func sharedArg(objectID string, isv uint64, mutable bool) (transaction.CallArg, 
 
 // dUSDCTypeTag builds the TypeTag for the dUSDC coin type.
 func dUSDCTypeTag() (transaction.TypeTag, error) {
-	addrBytes, err := transaction.ConvertSuiAddressStringToBytes(models.SuiAddress(dUSDCAddress))
+	const (
+		addr   = "0xe95040085976bfd54a1a07225cd46c8a2b4e8e2b6732f140a0fc49850ba73e1a"
+		module = "dusdc"
+		name   = "DUSDC"
+	)
+	addrBytes, err := transaction.ConvertSuiAddressStringToBytes(models.SuiAddress(addr))
 	if err != nil {
 		return transaction.TypeTag{}, fmt.Errorf("parse dUSDC address: %w", err)
 	}
 	return transaction.TypeTag{
 		Struct: &transaction.StructTag{
 			Address:    *addrBytes,
-			Module:     dUSDCModule,
-			Name:       dUSDCName,
+			Module:     module,
+			Name:       name,
 			TypeParams: []*transaction.TypeTag{},
 		},
 	}, nil
@@ -307,7 +310,7 @@ func (p *Protocol) Settle(ctx context.Context, m scanner.Market) (string, error)
 		},
 	)
 
-	// Step 2: redeem_permissionless<dUSDC>
+	// Step 2: redeem_permissionless<dUSDC> — void, transfers dUSDC to the trader internally
 	tx.MoveCall(pkg, "predict", "redeem_permissionless",
 		[]transaction.TypeTag{typeTag},
 		[]transaction.Argument{
@@ -320,7 +323,10 @@ func (p *Protocol) Settle(ctx context.Context, m scanner.Market) (string, error)
 		},
 	)
 
-	rsp, err := tx.Execute(ctx, models.SuiTransactionBlockOptions{ShowEffects: true}, "WaitForLocalExecution")
+	rsp, err := tx.Execute(ctx, models.SuiTransactionBlockOptions{
+		ShowEffects: true,
+	}, "WaitForLocalExecution")
+
 	if err != nil {
 		return "", fmt.Errorf("execute ptb: %w", err)
 	}

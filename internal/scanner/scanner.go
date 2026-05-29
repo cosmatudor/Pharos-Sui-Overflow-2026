@@ -10,6 +10,7 @@ type Market struct {
 	ID        string // composite: oracleID/managerID/strike/isUp
 	OracleID  string
 	ManagerID string
+	Trader    string // position owner — receives payout minus keeper tip
 	ExpiryMs  uint64
 	Strike    uint64
 	IsUp      bool
