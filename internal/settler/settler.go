@@ -2,7 +2,9 @@ package settler
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	keepererrors "keeper/internal/errors"
 	"keeper/internal/scanner"
 	"sync"
 )
@@ -78,6 +80,21 @@ func (s *Settler) settle(ctx context.Context, m scanner.Market) {
 	}
 
 	txHash, err := s.protocol.Settle(ctx, m)
+	if errors.Is(err, keepererrors.ErrAlreadySettled) {
+		fmt.Printf("market %s already settled by another keeper\n", m.ID)
+		_ = s.store.MarkSettled(ctx, m.ID, "external")
+		return
+	}
+	if errors.Is(err, keepererrors.ErrAlreadyRedeemed) {
+		fmt.Printf("market %s already redeemed on-chain (stale API data)\n", m.ID)
+		_ = s.store.MarkSettled(ctx, m.ID, "already_redeemed")
+		return
+	}
+	if errors.Is(err, keepererrors.ErrInsufficientGas) {
+		fmt.Printf("insufficient gas — skipping market %s, top up SUI wallet\n", m.ID)
+		// Leave in_flight; reaper will reclaim after timeout once wallet is topped up.
+		return
+	}
 	if err != nil {
 		_ = s.store.MarkFailed(ctx, m.ID, err.Error())
 		fmt.Printf("settlement failed for market %s: %v\n", m.ID, err)

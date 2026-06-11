@@ -38,6 +38,9 @@ func main() {
 	protocol, err := deepbook.New(
 		os.Getenv("SUI_RPC_URL"),
 		os.Getenv("SUI_PRIVATE_KEY"),
+		os.Getenv("KEEPER_REGISTRY_PKG"),
+		os.Getenv("KEEPER_REGISTRY_ID"),
+		os.Getenv("KEEPER_CREDENTIAL_ID"),
 	)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "protocol: %v\n", err)
