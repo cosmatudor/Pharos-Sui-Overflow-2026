@@ -63,7 +63,7 @@ func (s *Settler) Start(ctx context.Context, queue <-chan scanner.Market) {
 func (s *Settler) settle(ctx context.Context, m scanner.Market) {
 	settled, err := s.store.IsSettled(ctx, m.ID)
 	if err != nil {
-		fmt.Printf("store check failed for market %s: %v\n", m.ID, err)
+		fmt.Printf("[settler] db check error id=%s: %v\n", m.ID, err)
 		return
 	}
 	if settled {
@@ -72,37 +72,37 @@ func (s *Settler) settle(ctx context.Context, m scanner.Market) {
 
 	claimed, err := s.store.MarkInFlight(ctx, m.ID)
 	if err != nil {
-		fmt.Printf("failed to mark in-flight for market %s: %v\n", m.ID, err)
+		fmt.Printf("[settler] mark in-flight error id=%s: %v\n", m.ID, err)
 		return
 	}
 	if !claimed {
 		return
 	}
 
+	fmt.Printf("[settler] CLAIMED id=%s — calling Settle()\n", m.ID)
 	txHash, err := s.protocol.Settle(ctx, m)
 	if errors.Is(err, keepererrors.ErrAlreadySettled) {
-		fmt.Printf("market %s already settled by another keeper\n", m.ID)
+		fmt.Printf("[settler] id=%s already settled by another keeper (registry guard)\n", m.ID)
 		_ = s.store.MarkSettled(ctx, m.ID, "external")
 		return
 	}
 	if errors.Is(err, keepererrors.ErrAlreadyRedeemed) {
-		fmt.Printf("market %s already redeemed on-chain (stale API data)\n", m.ID)
+		fmt.Printf("[settler] id=%s stale API data — position gone on-chain\n", m.ID)
 		_ = s.store.MarkSettled(ctx, m.ID, "already_redeemed")
 		return
 	}
 	if errors.Is(err, keepererrors.ErrInsufficientGas) {
-		fmt.Printf("insufficient gas — skipping market %s, top up SUI wallet\n", m.ID)
-		// Leave in_flight; reaper will reclaim after timeout once wallet is topped up.
+		fmt.Printf("[settler] id=%s insufficient gas — leaving in_flight, top up wallet\n", m.ID)
 		return
 	}
 	if err != nil {
 		_ = s.store.MarkFailed(ctx, m.ID, err.Error())
-		fmt.Printf("settlement failed for market %s: %v\n", m.ID, err)
+		fmt.Printf("[settler] id=%s FAILED: %v\n", m.ID, err)
 		return
 	}
 
-	fmt.Printf("settled market %s tx=%s\n", m.ID, txHash)
+	fmt.Printf("[settler] id=%s SETTLED tx=%s\n", m.ID, txHash)
 	if err := s.store.MarkSettled(ctx, m.ID, txHash); err != nil {
-		fmt.Printf("failed to record settlement for market %s: %v\n", m.ID, err)
+		fmt.Printf("[settler] id=%s db write error: %v\n", m.ID, err)
 	}
 }

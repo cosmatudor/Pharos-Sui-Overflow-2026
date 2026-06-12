@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -119,47 +118,39 @@ func (p *Protocol) FetchMarkets(ctx context.Context) ([]scanner.Market, error) {
 	if err := p.get(ctx, "/oracles", &oracles); err != nil {
 		return nil, fmt.Errorf("fetch oracles: %w", err)
 	}
-	if raw, err := json.MarshalIndent(oracles, "", "  "); err == nil {
-		_ = os.WriteFile("oracles.json", raw, 0644)
-	}
-
 	settled := make(map[string]bool)
 	for _, o := range oracles {
 		if o.Status == "settled" && o.SettlementPrice != nil {
 			settled[o.OracleID] = true
 		}
 	}
-	fmt.Printf("settled oracles: %d / %d\n", len(settled), len(oracles))
 
 	var managers []apiManager
 	if err := p.get(ctx, "/managers", &managers); err != nil {
 		return nil, fmt.Errorf("fetch managers: %w", err)
 	}
 
+	type posKey struct {
+		oracleID string
+		expiry   uint64
+		strike   uint64
+		isUp     bool
+	}
+
 	var markets []scanner.Market
+	managersWithPositions := 0
 	for _, mgr := range managers {
 		var pos apiPositions
 		if err := p.get(ctx, "/managers/"+mgr.ManagerID+"/positions", &pos); err != nil {
+			fmt.Printf("[scan] manager=%s positions fetch error: %v\n", mgr.ManagerID, err)
 			continue
 		}
 		if len(pos.Minted) == 0 {
 			continue
 		}
+		managersWithPositions++
 
-		// Aggregate quantities by composite key — mirrors the on-chain
-		// Table<MarketKey, u64> which stores net quantity, not individual events.
-		//
-		// Old event-count matching had two silent bugs:
-		//   1. Partial redemptions (1 mint 2M + 1 redeem 1M) looked fully
-		//      redeemed by count → 1M left stranded on-chain.
-		//   2. Multiple mints to the same position produced duplicate market
-		//      IDs → only one PTB submitted, rest silently skipped.
-		type posKey struct {
-			oracleID string
-			expiry   uint64
-			strike   uint64
-			isUp     bool
-		}
+		// Aggregate mint/redeem quantities per key — mirrors Table<MarketKey, u64>.
 		mintedQty := make(map[posKey]uint64)
 		mintedTrader := make(map[posKey]string)
 		for _, mp := range pos.Minted {
@@ -173,14 +164,15 @@ func (p *Protocol) FetchMarkets(ctx context.Context) ([]scanner.Market, error) {
 		}
 
 		for k, totalMinted := range mintedQty {
+			redeemed := redeemedQty[k]
 			if !settled[k.oracleID] {
 				continue
 			}
-			redeemed := redeemedQty[k]
 			if redeemed >= totalMinted {
-				continue // fully redeemed per API
+				continue
 			}
 			netQty := totalMinted - redeemed
+
 			id := k.oracleID + "/" + mgr.ManagerID + "/" +
 				strconv.FormatUint(k.expiry, 10) + "/" +
 				strconv.FormatUint(k.strike, 10) + "/" +
@@ -198,7 +190,8 @@ func (p *Protocol) FetchMarkets(ctx context.Context) ([]scanner.Market, error) {
 		}
 	}
 
-	fmt.Printf("redeemable positions: %d\n", len(markets))
+	fmt.Printf("[scan] done: %d managers with positions, %d redeemable\n",
+		managersWithPositions, len(markets))
 	return markets, nil
 }
 
@@ -391,6 +384,8 @@ func (p *Protocol) onChainQty(ctx context.Context, m scanner.Market) uint64 {
 
 	tableID, err := p.resolvePositionsTableID(ctx, m.ManagerID)
 	if err != nil {
+		fmt.Printf("[precheck] manager=%s table resolve error: %v → fail open (api qty=%d)\n",
+			m.ManagerID, err, m.Quantity)
 		return m.Quantity // fail open
 	}
 
@@ -419,22 +414,27 @@ func (p *Protocol) onChainQty(ctx context.Context, m scanner.Market) uint64 {
 		},
 	}, &result)
 	if err != nil {
+		fmt.Printf("[precheck] oracle=%s strike=%d isUp=%v rpc error: %v → fail open (api qty=%d)\n",
+			m.OracleID, m.Strike, m.IsUp, err, m.Quantity)
 		return m.Quantity // RPC failure → fail open
 	}
+
 	// Field not found — position fully removed from table.
 	if result.Error != nil {
 		return 0
 	}
+
 	// Parse the on-chain u64 quantity from the dynamic field value.
 	if result.Data == nil || result.Data.Content == nil || result.Data.Content.Fields == nil {
+		fmt.Printf("[precheck] oracle=%s unexpected response shape → fail open\n", m.OracleID)
 		return m.Quantity // unexpected shape → fail open
 	}
 	qty, err := strconv.ParseUint(result.Data.Content.Fields.Value, 10, 64)
 	if err != nil {
+		fmt.Printf("[precheck] oracle=%s qty parse error: %v → fail open\n", m.OracleID, err)
 		return m.Quantity // parse failure → fail open
 	}
-	// qty == 0 means the entry was decremented to zero but not yet removed.
-	// Treat as fully redeemed — any PTB with quantity > 0 would abort.
+
 	return qty
 }
 
@@ -483,6 +483,9 @@ func (p *Protocol) Settle(ctx context.Context, m scanner.Market) (string, error)
 	defer cancel()
 	// Use the verified on-chain quantity — never the stale API value.
 	m.Quantity = qty
+
+	fmt.Printf("[ptb] START oracle=%s manager=%s expiry=%d strike=%d isUp=%v qty=%d trader=%s\n",
+		m.OracleID, m.ManagerID, m.ExpiryMs, m.Strike, m.IsUp, m.Quantity, m.Trader)
 
 	// Resolve ISVs for shared objects.
 	registryISV, err := p.initialSharedVersion(ctx, p.registryID)
@@ -611,12 +614,14 @@ func (p *Protocol) Settle(ctx context.Context, m scanner.Market) (string, error)
 	}, "WaitForLocalExecution")
 	if err != nil {
 		errStr := err.Error()
+		fmt.Printf("[ptb] execute error: %v\n", err)
 		if isGasError(errStr) {
 			return "", keepererrors.ErrInsufficientGas
 		}
 		return "", fmt.Errorf("execute ptb: %w", err)
 	}
 	if rsp.Effects.Status.Status != "success" {
+		fmt.Printf("[ptb] FAILED effects_error=%s\n", rsp.Effects.Status.Error)
 		if isAlreadySettledError(rsp.Effects.Status.Error) {
 			return "", keepererrors.ErrAlreadySettled
 		}
@@ -626,5 +631,6 @@ func (p *Protocol) Settle(ctx context.Context, m scanner.Market) (string, error)
 		return "", fmt.Errorf("ptb failed on chain: %s", rsp.Effects.Status.Error)
 	}
 
+	fmt.Printf("[ptb] SUCCESS tx=%s\n", rsp.Digest)
 	return rsp.Digest, nil
 }
