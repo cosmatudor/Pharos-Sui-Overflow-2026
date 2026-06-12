@@ -1,6 +1,7 @@
 package deepbook
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -39,14 +40,16 @@ type Protocol struct {
 	rawClient *suiclient.Client
 	signer    *signer.Signer
 	http      *http.Client
+	rpcURL    string
 
 	// On-chain registry coordinates.
 	registryPkg  string // deployed keeper_registry package ID
 	registryID   string // Registry shared object ID
 	credentialID string // keeper's KeeperCredential owned object ID
 
-	isvCache sync.Map
-	settleMu sync.Mutex // serializes PTB execution so gas coin version stays fresh
+	isvCache        sync.Map // objectID -> initialSharedVersion
+	managerTableIDs sync.Map // managerID -> positions Table object ID
+	settleMu        sync.Mutex
 }
 
 func New(rpcURL, suiPrivKey, registryPkg, registryID, credentialID string) (*Protocol, error) {
@@ -61,6 +64,7 @@ func New(rpcURL, suiPrivKey, registryPkg, registryID, credentialID string) (*Pro
 		rawClient:    raw,
 		signer:       s,
 		http:         &http.Client{},
+		rpcURL:       rpcURL,
 		registryPkg:  registryPkg,
 		registryID:   registryID,
 		credentialID: credentialID,
@@ -142,39 +146,54 @@ func (p *Protocol) FetchMarkets(ctx context.Context) ([]scanner.Market, error) {
 			continue
 		}
 
+		// Aggregate quantities by composite key — mirrors the on-chain
+		// Table<MarketKey, u64> which stores net quantity, not individual events.
+		//
+		// Old event-count matching had two silent bugs:
+		//   1. Partial redemptions (1 mint 2M + 1 redeem 1M) looked fully
+		//      redeemed by count → 1M left stranded on-chain.
+		//   2. Multiple mints to the same position produced duplicate market
+		//      IDs → only one PTB submitted, rest silently skipped.
 		type posKey struct {
 			oracleID string
 			expiry   uint64
 			strike   uint64
 			isUp     bool
 		}
-		redeemedCount := make(map[posKey]int)
+		mintedQty := make(map[posKey]uint64)
+		mintedTrader := make(map[posKey]string)
+		for _, mp := range pos.Minted {
+			k := posKey{mp.OracleID, mp.Expiry, mp.Strike, mp.IsUp}
+			mintedQty[k] += mp.Quantity
+			mintedTrader[k] = mp.Trader
+		}
+		redeemedQty := make(map[posKey]uint64)
 		for _, r := range pos.Redeemed {
-			redeemedCount[posKey{r.OracleID, r.Expiry, r.Strike, r.IsUp}]++
+			redeemedQty[posKey{r.OracleID, r.Expiry, r.Strike, r.IsUp}] += r.Quantity
 		}
 
-		for _, mp := range pos.Minted {
-			if !settled[mp.OracleID] {
+		for k, totalMinted := range mintedQty {
+			if !settled[k.oracleID] {
 				continue
 			}
-			k := posKey{mp.OracleID, mp.Expiry, mp.Strike, mp.IsUp}
-			if redeemedCount[k] > 0 {
-				redeemedCount[k]--
-				continue
+			redeemed := redeemedQty[k]
+			if redeemed >= totalMinted {
+				continue // fully redeemed per API
 			}
-			id := mp.OracleID + "/" + mgr.ManagerID + "/" +
-				strconv.FormatUint(mp.Expiry, 10) + "/" +
-				strconv.FormatUint(mp.Strike, 10) + "/" +
-				strconv.FormatBool(mp.IsUp)
+			netQty := totalMinted - redeemed
+			id := k.oracleID + "/" + mgr.ManagerID + "/" +
+				strconv.FormatUint(k.expiry, 10) + "/" +
+				strconv.FormatUint(k.strike, 10) + "/" +
+				strconv.FormatBool(k.isUp)
 			markets = append(markets, scanner.Market{
 				ID:        id,
-				OracleID:  mp.OracleID,
+				OracleID:  k.oracleID,
 				ManagerID: mgr.ManagerID,
-				Trader:    mp.Trader,
-				ExpiryMs:  mp.Expiry,
-				Strike:    mp.Strike,
-				IsUp:      mp.IsUp,
-				Quantity:  mp.Quantity,
+				Trader:    mintedTrader[k],
+				ExpiryMs:  k.expiry,
+				Strike:    k.strike,
+				IsUp:      k.isUp,
+				Quantity:  netQty,
 			})
 		}
 	}
@@ -264,6 +283,161 @@ func dUSDCTypeTag() (transaction.TypeTag, error) {
 	}, nil
 }
 
+// suiRPC executes a raw JSON-RPC call against the Sui fullnode.
+// Used for RPC methods not yet wrapped by the SDK (e.g. suix_getDynamicFieldObject).
+func (p *Protocol) suiRPC(ctx context.Context, method string, params []interface{}, result interface{}) error {
+	body, err := json.Marshal(map[string]interface{}{
+		"jsonrpc": "2.0",
+		"id":      1,
+		"method":  method,
+		"params":  params,
+	})
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.rpcURL, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := p.http.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+	var envelope struct {
+		Result json.RawMessage `json:"result"`
+		Error  *struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(raw, &envelope); err != nil {
+		return err
+	}
+	if envelope.Error != nil {
+		return fmt.Errorf("rpc %s: %s", method, envelope.Error.Message)
+	}
+	return json.Unmarshal(envelope.Result, result)
+}
+
+// resolvePositionsTableID fetches and caches the object ID of the positions Table
+// inside a PredictManager. Table IDs are stable for the lifetime of the object.
+func (p *Protocol) resolvePositionsTableID(ctx context.Context, managerID string) (string, error) {
+	if v, ok := p.managerTableIDs.Load(managerID); ok {
+		return v.(string), nil
+	}
+	resp, err := p.client.SuiGetObject(ctx, models.SuiGetObjectRequest{
+		ObjectId: managerID,
+		Options:  models.SuiObjectDataOptions{ShowContent: true},
+	})
+	if err != nil {
+		return "", fmt.Errorf("get manager %s: %w", managerID, err)
+	}
+	if resp.Data == nil || resp.Data.Content == nil {
+		return "", fmt.Errorf("manager %s has no content", managerID)
+	}
+	contentBytes, err := json.Marshal(resp.Data.Content)
+	if err != nil {
+		return "", err
+	}
+	var content struct {
+		Fields struct {
+			Positions struct {
+				Fields struct {
+					ID struct {
+						ID string `json:"id"`
+					} `json:"id"`
+				} `json:"fields"`
+			} `json:"positions"`
+		} `json:"fields"`
+	}
+	if err := json.Unmarshal(contentBytes, &content); err != nil {
+		return "", fmt.Errorf("parse manager content: %w", err)
+	}
+	tableID := content.Fields.Positions.Fields.ID.ID
+	if tableID == "" {
+		return "", fmt.Errorf("positions table ID empty for manager %s", managerID)
+	}
+	p.managerTableIDs.Store(managerID, tableID)
+	return tableID, nil
+}
+
+// marketKeyDirection converts the API's is_up bool to the on-chain MarketKey
+// direction u8. The Move contract stores direction: u8 where 0 = UP, 1 = DOWN —
+// the inverse of what you might expect.
+func marketKeyDirection(isUp bool) uint8 {
+	if isUp {
+		return 0
+	}
+	return 1
+}
+
+// onChainQty returns the actual remaining quantity stored on-chain for this
+// position. Returns 0 if the position doesn't exist, has been fully redeemed
+// (value == 0 but entry persists), or the table entry was removed.
+//
+// Also returns the on-chain quantity to use in the PTB so we never pass a
+// stale API quantity that diverges from what the contract actually holds.
+//
+// Fails open: any RPC/parse error → returns m.Quantity (API value) so the PTB
+// remains the authoritative check.
+func (p *Protocol) onChainQty(ctx context.Context, m scanner.Market) uint64 {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	tableID, err := p.resolvePositionsTableID(ctx, m.ManagerID)
+	if err != nil {
+		return m.Quantity // fail open
+	}
+
+	var result struct {
+		Error *struct {
+			Code string `json:"code"`
+		} `json:"error"`
+		Data *struct {
+			Content *struct {
+				Fields *struct {
+					Value string `json:"value"` // u64 as quoted decimal string
+				} `json:"fields"`
+			} `json:"content"`
+		} `json:"data"`
+	}
+	err = p.suiRPC(ctx, "suix_getDynamicFieldObject", []interface{}{
+		tableID,
+		map[string]interface{}{
+			"type": PredictPkg + "::market_key::MarketKey",
+			"value": map[string]interface{}{
+				"oracle_id": m.OracleID,
+				"expiry":    strconv.FormatUint(m.ExpiryMs, 10),
+				"strike":    strconv.FormatUint(m.Strike, 10),
+				"direction": marketKeyDirection(m.IsUp),
+			},
+		},
+	}, &result)
+	if err != nil {
+		return m.Quantity // RPC failure → fail open
+	}
+	// Field not found — position fully removed from table.
+	if result.Error != nil {
+		return 0
+	}
+	// Parse the on-chain u64 quantity from the dynamic field value.
+	if result.Data == nil || result.Data.Content == nil || result.Data.Content.Fields == nil {
+		return m.Quantity // unexpected shape → fail open
+	}
+	qty, err := strconv.ParseUint(result.Data.Content.Fields.Value, 10, 64)
+	if err != nil {
+		return m.Quantity // parse failure → fail open
+	}
+	// qty == 0 means the entry was decremented to zero but not yet removed.
+	// Treat as fully redeemed — any PTB with quantity > 0 would abort.
+	return qty
+}
+
 // isAlreadySettledError reports whether a Sui effects error string represents
 // a MoveAbort from registry::EAlreadySettled (abort code 0).
 func isAlreadySettledError(effectsErr string) bool {
@@ -293,11 +467,22 @@ func isGasError(errStr string) bool {
 // Returns keepererrors.ErrAlreadySettled if another keeper already settled this
 // market — the caller should treat this as success, not failure.
 func (p *Protocol) Settle(ctx context.Context, m scanner.Market) (string, error) {
+	// Pre-check: read the actual on-chain quantity before acquiring the mutex.
+	// Runs concurrently across all workers — no lock held.
+	// Returns 0 if the position is gone or zero-balanced (entry persists but qty=0).
+	// Fails open on RPC error: uses the API quantity so the PTB remains authoritative.
+	qty := p.onChainQty(ctx, m)
+	if qty == 0 {
+		return "", keepererrors.ErrAlreadyRedeemed
+	}
+
 	p.settleMu.Lock()
 	defer p.settleMu.Unlock()
 
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
+	// Use the verified on-chain quantity — never the stale API value.
+	m.Quantity = qty
 
 	// Resolve ISVs for shared objects.
 	registryISV, err := p.initialSharedVersion(ctx, p.registryID)
