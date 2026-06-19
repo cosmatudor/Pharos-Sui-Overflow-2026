@@ -1,0 +1,11 @@
+[package]
+name = "keeper_registry"
+edition = "2024.beta"
+
+[dependencies]
+# No deepbook_predict dependency needed.
+# PTB atomicity guarantees that record_settlement only executes if the
+# preceding predict::redeem_permissionless call in the same PTB succeeded.
+
+[addresses]
+keeper_registry = "0x0"
