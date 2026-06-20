@@ -1,7 +1,12 @@
 [
   {
+    "oracle_id": "0x509f610dc251af66fa80e73ddcecde1d13eb9b76688b051a535c99dccf4908e7",
+    "status": "active",
+    "settlement_price": null
+  },
+  {
     "oracle_id": "0x4f406504967179f5510730d43f31750d83a2d9bf4655acaa491fff3f4f518da4",
-    "status": "created",
+    "status": "active",
     "settlement_price": null
   },
   {
@@ -36,8 +41,8 @@
   },
   {
     "oracle_id": "0xea3942065a553ed8f3b479a376bdb28d31079fb34e7b8c87d97539429dd112eb",
-    "status": "active",
-    "settlement_price": null
+    "status": "settled",
+    "settlement_price": 63685473076976
   },
   {
     "oracle_id": "0xbbac582135945747126049d70c6b8286fad249d0de84508f24421b13f7b3880c",

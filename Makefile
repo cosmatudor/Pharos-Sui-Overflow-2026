@@ -10,7 +10,7 @@ build:
 	go build -o bin/keeper ./cmd/
 
 up:
-	docker compose up -d
+	docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
 
 down:
 	docker compose down
