@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"keeper/internal/scanner"
+	"time"
 
 	"github.com/segmentio/kafka-go"
 )
@@ -15,6 +16,8 @@ type Kafka struct {
 }
 
 func NewKafka(brokers []string, topic string) *Kafka {
+	ensureTopic(brokers[0], topic)
+
 	writer := &kafka.Writer{
 		Addr:                   kafka.TCP(brokers...),
 		Topic:                  topic,
@@ -26,6 +29,24 @@ func NewKafka(brokers []string, topic string) *Kafka {
 		GroupID: "keeper",
 	})
 	return &Kafka{writer: writer, reader: reader}
+}
+
+// ensureTopic creates the topic if it doesn't exist, retrying until Kafka is ready.
+func ensureTopic(broker, topic string) {
+	for attempt := 0; attempt < 20; attempt++ {
+		conn, err := kafka.Dial("tcp", broker)
+		if err != nil {
+			time.Sleep(2 * time.Second)
+			continue
+		}
+		_ = conn.CreateTopics(kafka.TopicConfig{
+			Topic:             topic,
+			NumPartitions:     1,
+			ReplicationFactor: 1,
+		})
+		conn.Close()
+		return
+	}
 }
 
 func (q *Kafka) Publish(ctx context.Context, m scanner.Market) error {
