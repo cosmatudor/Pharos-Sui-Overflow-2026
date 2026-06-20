@@ -422,10 +422,11 @@ func isAlreadySettledError(effectsErr string) bool {
 
 // isAlreadyRedeemedError detects a MoveAbort from predict_manager::decrease_position
 // (abort code 1) — the position no longer exists on-chain, predict-server data is stale.
+// Handles both decimal ", 1)" (effects status) and hex "0x1)" (dry-run error) formats.
 func isAlreadyRedeemedError(effectsErr string) bool {
-	return strings.Contains(effectsErr, `"predict_manager"`) &&
+	return strings.Contains(effectsErr, "predict_manager") &&
 		strings.Contains(effectsErr, "decrease_position") &&
-		strings.Contains(effectsErr, ", 1)")
+		(strings.Contains(effectsErr, ", 1)") || strings.Contains(effectsErr, "0x1)"))
 }
 
 // isGasError detects an insufficient gas balance error from the RPC layer.
@@ -592,6 +593,12 @@ func (p *Protocol) Settle(ctx context.Context, m scanner.Market) (string, error)
 		fmt.Printf("[ptb] execute error: %v\n", err)
 		if isGasError(errStr) {
 			return "", keepererrors.ErrInsufficientGas
+		}
+		if isAlreadyRedeemedError(errStr) {
+			return "", keepererrors.ErrAlreadyRedeemed
+		}
+		if isAlreadySettledError(errStr) {
+			return "", keepererrors.ErrAlreadySettled
 		}
 		return "", fmt.Errorf("execute ptb: %w", err)
 	}
