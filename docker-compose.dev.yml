@@ -1,0 +1,11 @@
+# Local development overrides — exposes DB and Kafka ports so `make run` can reach them.
+# Usage: docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+# Or just: make up  (Makefile already wires this)
+services:
+  postgres:
+    ports:
+      - "5433:5432"
+
+  kafka:
+    ports:
+      - "9092:9092"
