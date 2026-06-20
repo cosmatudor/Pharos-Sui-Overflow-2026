@@ -16,19 +16,26 @@ type Store interface {
 	ReclaimStale(ctx context.Context, olderThan time.Duration) (int64, error)
 }
 
+// Indexer is implemented by indexer.Indexer.
+type Indexer interface {
+	Run(ctx context.Context)
+}
+
 type Engine struct {
 	scanner *scanner.Scanner
 	queue   queue.Queue
 	settler *settler.Settler
 	store   Store
+	indexer Indexer
 }
 
-func New(s *scanner.Scanner, q queue.Queue, st *settler.Settler, store Store) *Engine {
+func New(s *scanner.Scanner, q queue.Queue, st *settler.Settler, store Store, idx Indexer) *Engine {
 	return &Engine{
 		scanner: s,
 		queue:   q,
 		settler: st,
 		store:   store,
+		indexer: idx,
 	}
 }
 
@@ -38,7 +45,14 @@ func (e *Engine) Run(ctx context.Context) {
 
 	var wg sync.WaitGroup
 
-	// bridge: read expired markets from scanner, publish to queue
+	// indexer: streams PositionMinted events into DB every 2s
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		e.indexer.Run(ctx)
+	}()
+
+	// bridge: read markets from scanner, publish to queue
 	wg.Add(1)
 	go func() {
 		defer wg.Done()

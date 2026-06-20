@@ -14,6 +14,7 @@ import (
 
 	keepererrors "keeper/internal/errors"
 	"keeper/internal/scanner"
+	"keeper/internal/store"
 
 	"github.com/block-vision/sui-go-sdk/models"
 	"github.com/block-vision/sui-go-sdk/signer"
@@ -46,12 +47,20 @@ type Protocol struct {
 	registryID   string // Registry shared object ID
 	credentialID string // keeper's KeeperCredential owned object ID
 
+	store Store
+
 	isvCache        sync.Map // objectID -> initialSharedVersion
 	managerTableIDs sync.Map // managerID -> positions Table object ID
 	settleMu        sync.Mutex
 }
 
-func New(rpcURL, suiPrivKey, registryPkg, registryID, credentialID string) (*Protocol, error) {
+// Store is the subset of store.Store used by the protocol layer.
+type Store interface {
+	ListActiveOracleIDs(ctx context.Context) ([]string, error)
+	ListRedeemablePositions(ctx context.Context, oracleIDs []string) ([]store.Position, error)
+}
+
+func New(rpcURL, suiPrivKey, registryPkg, registryID, credentialID string, st Store) (*Protocol, error) {
 	s, err := signer.NewSignerWithSecretKey(suiPrivKey)
 	if err != nil {
 		return nil, fmt.Errorf("load signer: %w", err)
@@ -67,6 +76,7 @@ func New(rpcURL, suiPrivKey, registryPkg, registryID, credentialID string) (*Pro
 		registryPkg:  registryPkg,
 		registryID:   registryID,
 		credentialID: credentialID,
+		store:        st,
 	}, nil
 }
 
@@ -74,25 +84,6 @@ type apiOracle struct {
 	OracleID        string  `json:"oracle_id"`
 	Status          string  `json:"status"`
 	SettlementPrice *uint64 `json:"settlement_price"`
-}
-
-type apiManager struct {
-	ManagerID string `json:"manager_id"`
-}
-
-type apiPositions struct {
-	Minted   []apiPosition `json:"minted"`
-	Redeemed []apiPosition `json:"redeemed"`
-}
-
-type apiPosition struct {
-	OracleID  string `json:"oracle_id"`
-	ManagerID string `json:"manager_id"`
-	Trader    string `json:"trader"`
-	Expiry    uint64 `json:"expiry"`
-	Strike    uint64 `json:"strike"`
-	IsUp      bool   `json:"is_up"`
-	Quantity  uint64 `json:"quantity"`
 }
 
 func (p *Protocol) get(ctx context.Context, path string, out interface{}) error {
@@ -112,86 +103,70 @@ func (p *Protocol) get(ctx context.Context, path string, out interface{}) error 
 	return json.Unmarshal(body, out)
 }
 
-// FetchMarkets queries the predict server for settled oracles with unredeemed positions.
+// FetchMarkets uses the local DB (populated by the indexer from PositionMinted events)
+// to find candidate positions, then checks oracle settlement status with a single
+// predict server API call. This replaces 691+ HTTP calls with 1 API call + 1 DB query.
 func (p *Protocol) FetchMarkets(ctx context.Context) ([]scanner.Market, error) {
+	// Step 1: get distinct oracle IDs that have positions in our DB.
+	oracleIDs, err := p.store.ListActiveOracleIDs(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list oracle IDs: %w", err)
+	}
+	if len(oracleIDs) == 0 {
+		fmt.Println("[scan] no positions in DB yet — indexer still syncing")
+		return nil, nil
+	}
+
+	// Step 2: fetch oracle settlement status. One API call covers all oracles.
 	var oracles []apiOracle
 	if err := p.get(ctx, "/oracles", &oracles); err != nil {
 		return nil, fmt.Errorf("fetch oracles: %w", err)
 	}
-	settled := make(map[string]bool)
+	settledSet := make(map[string]bool, len(oracles))
 	for _, o := range oracles {
 		if o.Status == "settled" && o.SettlementPrice != nil {
-			settled[o.OracleID] = true
+			settledSet[o.OracleID] = true
 		}
 	}
 
-	var managers []apiManager
-	if err := p.get(ctx, "/managers", &managers); err != nil {
-		return nil, fmt.Errorf("fetch managers: %w", err)
-	}
-
-	type posKey struct {
-		oracleID string
-		expiry   uint64
-		strike   uint64
-		isUp     bool
-	}
-
-	var markets []scanner.Market
-	managersWithPositions := 0
-	for _, mgr := range managers {
-		var pos apiPositions
-		if err := p.get(ctx, "/managers/"+mgr.ManagerID+"/positions", &pos); err != nil {
-			fmt.Printf("[scan] manager=%s positions fetch error: %v\n", mgr.ManagerID, err)
-			continue
-		}
-		if len(pos.Minted) == 0 {
-			continue
-		}
-		managersWithPositions++
-
-		// Aggregate mint/redeem quantities per key — mirrors Table<MarketKey, u64>.
-		mintedQty := make(map[posKey]uint64)
-		mintedTrader := make(map[posKey]string)
-		for _, mp := range pos.Minted {
-			k := posKey{mp.OracleID, mp.Expiry, mp.Strike, mp.IsUp}
-			mintedQty[k] += mp.Quantity
-			mintedTrader[k] = mp.Trader
-		}
-		redeemedQty := make(map[posKey]uint64)
-		for _, r := range pos.Redeemed {
-			redeemedQty[posKey{r.OracleID, r.Expiry, r.Strike, r.IsUp}] += r.Quantity
-		}
-
-		for k, totalMinted := range mintedQty {
-			redeemed := redeemedQty[k]
-			if !settled[k.oracleID] {
-				continue
-			}
-			if redeemed >= totalMinted {
-				continue
-			}
-			netQty := totalMinted - redeemed
-
-			id := k.oracleID + "/" + mgr.ManagerID + "/" +
-				strconv.FormatUint(k.expiry, 10) + "/" +
-				strconv.FormatUint(k.strike, 10) + "/" +
-				strconv.FormatBool(k.isUp)
-			markets = append(markets, scanner.Market{
-				ID:        id,
-				OracleID:  k.oracleID,
-				ManagerID: mgr.ManagerID,
-				Trader:    mintedTrader[k],
-				ExpiryMs:  k.expiry,
-				Strike:    k.strike,
-				IsUp:      k.isUp,
-				Quantity:  netQty,
-			})
+	// Step 3: intersect — keep only oracle IDs we know about AND are settled.
+	var settledOracleIDs []string
+	for _, id := range oracleIDs {
+		if settledSet[id] {
+			settledOracleIDs = append(settledOracleIDs, id)
 		}
 	}
+	if len(settledOracleIDs) == 0 {
+		fmt.Printf("[scan] %d tracked oracles, none settled yet\n", len(oracleIDs))
+		return nil, nil
+	}
 
-	fmt.Printf("[scan] done: %d managers with positions, %d redeemable\n",
-		managersWithPositions, len(markets))
+	// Step 4: query DB for positions on settled oracles, excluding already-settled markets.
+	positions, err := p.store.ListRedeemablePositions(ctx, settledOracleIDs)
+	if err != nil {
+		return nil, fmt.Errorf("list redeemable positions: %w", err)
+	}
+
+	markets := make([]scanner.Market, 0, len(positions))
+	for _, pos := range positions {
+		id := pos.OracleID + "/" + pos.ManagerID + "/" +
+			strconv.FormatUint(pos.Expiry, 10) + "/" +
+			strconv.FormatUint(pos.Strike, 10) + "/" +
+			strconv.FormatBool(pos.IsUp)
+		markets = append(markets, scanner.Market{
+			ID:        id,
+			OracleID:  pos.OracleID,
+			ManagerID: pos.ManagerID,
+			Trader:    pos.Trader,
+			ExpiryMs:  pos.Expiry,
+			Strike:    pos.Strike,
+			IsUp:      pos.IsUp,
+			Quantity:  pos.Quantity,
+		})
+	}
+
+	fmt.Printf("[scan] %d settled oracles, %d redeemable positions\n",
+		len(settledOracleIDs), len(markets))
 	return markets, nil
 }
 

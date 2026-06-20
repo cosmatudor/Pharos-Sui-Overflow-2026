@@ -7,7 +7,18 @@ module keeper_registry::credential;
 use sui::balance::Balance;
 use sui::clock::Clock;
 use sui::coin::Coin;
+use sui::event;
 use sui::sui::SUI;
+
+// === Events ===
+
+/// Emitted when a new keeper bonds SUI and joins the network.
+/// Off-chain dashboards use this to discover all registered keepers,
+/// including those that haven't won a settlement yet.
+public struct KeeperRegistered has copy, drop {
+    keeper: address,
+    bonded: u64,
+}
 
 // === Errors ===
 const EBondTooLow: u64 = 0;
@@ -38,6 +49,7 @@ public struct KeeperCredential has key {
 /// Bond SUI and receive a KeeperCredential.
 public fun register(stake: Coin<SUI>, clk: &Clock, ctx: &mut TxContext) {
     assert!(stake.value() >= MIN_BOND, EBondTooLow);
+    let bonded = stake.value();
     let cred = KeeperCredential {
         id: object::new(ctx),
         keeper: ctx.sender(),
@@ -45,6 +57,7 @@ public fun register(stake: Coin<SUI>, clk: &Clock, ctx: &mut TxContext) {
         jobs_completed: 0,
         activated_at: clk.timestamp_ms() + ACTIVATION_DELAY_MS,
     };
+    event::emit(KeeperRegistered { keeper: ctx.sender(), bonded });
     transfer::transfer(cred, ctx.sender());
 }
 

@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from "react"
 import { SuiClient } from "@mysten/sui/client"
-import { REGISTRY_ID, EVENT_TYPE, RPC_URL } from "../constants"
+import { REGISTRY_ID, EVENT_TYPE, KEEPER_REGISTERED_TYPE, RPC_URL } from "../constants"
 
 export interface SettlementEvent {
   keeper: string
@@ -17,6 +17,7 @@ export interface KeeperStat {
   jobs: number
   earnings: number
   lastActive: number
+  registered: boolean  // true = has KeeperRegistered event; false = inferred from settlements
 }
 
 export interface NetworkData {
@@ -46,47 +47,78 @@ export function useNetworkData(pollMs = 30_000): NetworkData {
 
   const refresh = useCallback(async () => {
     try {
-      const [regObj, eventsPage] = await Promise.all([
+      const [regObj, eventsPage, registrationPage] = await Promise.all([
         client.getObject({ id: REGISTRY_ID, options: { showContent: true } }),
         client.queryEvents({
           query: { MoveEventType: EVENT_TYPE },
           order: "descending",
           limit: 50,
         }),
+        client.queryEvents({
+          query: { MoveEventType: KEEPER_REGISTERED_TYPE },
+          order: "descending",
+          limit: 100,
+        }),
       ])
 
+      // Registry fields
       const fields = (regObj.data?.content as { fields?: Record<string, unknown> })?.fields ?? {}
-      const treasury = Number(
-        (fields.treasury as { fields?: { value?: string } })?.fields?.value ??
-        (fields.treasury as { value?: string })?.value ??
-        0
-      )
+      const treasury = Number(fields.treasury ?? 0)
       const rewardPerSettlement = Number(fields.reward_per_settlement ?? 0)
-      const totalSettlements = Number(fields.total_settlements ?? 0)
+      const totalSettlements = Number(
+        (fields.settled_markets as { fields?: { size?: string } })?.fields?.size ?? 0
+      )
 
+      // Settlement events → per-keeper stats
       const events: SettlementEvent[] = eventsPage.data.map(e => {
         const j = e.parsedJson as Record<string, unknown>
         return {
-          keeper:     String(j.keeper ?? ""),
-          oracle_id:  String(j.oracle_id ?? ""),
-          is_up:      Boolean(j.is_up),
-          strike:     Number(j.strike ?? 0),
+          keeper:      String(j.keeper ?? ""),
+          oracle_id:   String(j.oracle_id ?? ""),
+          is_up:       Boolean(j.is_up),
+          strike:      Number(j.strike ?? 0),
           reward_paid: Number(j.reward_paid ?? 0),
           timestampMs: Number(e.timestampMs ?? 0),
-          txDigest:   e.id.txDigest,
+          txDigest:    e.id.txDigest,
         }
       })
 
       const keeperMap = new Map<string, KeeperStat>()
       for (const ev of events) {
         const k = keeperMap.get(ev.keeper) ?? {
-          address: ev.keeper, jobs: 0, earnings: 0, lastActive: 0,
+          address: ev.keeper, jobs: 0, earnings: 0, lastActive: 0, registered: false,
         }
         k.jobs++
         k.earnings += ev.reward_paid
         k.lastActive = Math.max(k.lastActive, ev.timestampMs)
         keeperMap.set(ev.keeper, k)
       }
+
+      // Registration events → merge in keepers that haven't earned yet
+      for (const e of registrationPage.data) {
+        const j = e.parsedJson as Record<string, unknown>
+        const addr = String(j.keeper ?? "")
+        if (!addr) continue
+        const existing = keeperMap.get(addr)
+        if (existing) {
+          existing.registered = true
+        } else {
+          keeperMap.set(addr, {
+            address: addr,
+            jobs: 0,
+            earnings: 0,
+            lastActive: Number(e.timestampMs ?? 0),
+            registered: true,
+          })
+        }
+      }
+
+      // Mark all keepers found via settlement events as registered too
+      // (they registered before we added the KeeperRegistered event)
+      for (const k of keeperMap.values()) {
+        if (k.jobs > 0) k.registered = true
+      }
+
       const keepers = [...keeperMap.values()].sort((a, b) => b.jobs - a.jobs)
 
       setState({ totalSettlements, treasury, rewardPerSettlement, events, keepers, lastUpdated: new Date() })

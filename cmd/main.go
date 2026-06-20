@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"keeper/internal/engine"
+	"keeper/internal/indexer"
 	"keeper/internal/protocols/deepbook"
 	"keeper/internal/queue"
 	"keeper/internal/scanner"
@@ -35,23 +36,28 @@ func main() {
 		os.Exit(1)
 	}
 
+	rpcURL := os.Getenv("SUI_RPC_URL")
+
 	protocol, err := deepbook.New(
-		os.Getenv("SUI_RPC_URL"),
+		rpcURL,
 		os.Getenv("SUI_PRIVATE_KEY"),
 		os.Getenv("KEEPER_REGISTRY_PKG"),
 		os.Getenv("KEEPER_REGISTRY_ID"),
 		os.Getenv("KEEPER_CREDENTIAL_ID"),
+		st,
 	)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "protocol: %v\n", err)
 		os.Exit(1)
 	}
 
+	idx := indexer.New(rpcURL, st)
+
 	brokers := strings.Split(os.Getenv("KAFKA_BROKERS"), ",")
 	q := queue.NewKafka(brokers, "markets.redeemable")
-	s := scanner.New(protocol, 30*time.Second)
+	s := scanner.New(protocol, 5*time.Second)
 	set := settler.New(protocol, st, 5)
-	e := engine.New(s, q, set, st)
+	e := engine.New(s, q, set, st, idx)
 
 	fmt.Println("keeper running")
 	e.Run(ctx)
