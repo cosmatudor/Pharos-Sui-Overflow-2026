@@ -19,4 +19,4 @@ export const CLOCK_ID = "0x6"
 
 export const MIN_BOND_MIST = 1_000_000_000n
 
-export const EXPLORER_BASE = "https://testnet.suivision.xyz"
+export const EXPLORER_BASE = "https://suiscan.xyz/testnet"

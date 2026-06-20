@@ -70,7 +70,7 @@ export default function KeeperTable({ keepers, loading }: Props) {
             </td>
             <td className="keeper-addr">
               <a
-                href={`${EXPLORER_BASE}/address/${k.address}`}
+                href={`${EXPLORER_BASE}/account/${k.address}`}
                 target="_blank"
                 rel="noopener"
                 title={k.address}
