@@ -170,7 +170,7 @@ function Step2Bond({ address, rewardPerSettlement }: { address: string; rewardPe
               {shortId(tx.digest)}
             </a>
             <br />
-            <span style={{ color: "var(--muted2)" }}>Fetching your credential…</span>
+            <span style={{ color: "var(--text2)" }}>Fetching your credential…</span>
           </div>
         </div>
       )}
@@ -258,11 +258,10 @@ function Step3Run({ address, credentialId, jobsCompleted, bondedAmount, rewardPe
         <code className="snippet">{"make up   # start postgres + kafka\nmake run  # start the keeper"}</code>
       </div>
 
-      <div style={{ fontSize: 12, color: "var(--muted2)", lineHeight: 1.6 }}>
-        The keeper scans all settled oracles every 30s, calls{" "}
-        <span className="mono" style={{ fontSize: 11 }}>redeem_permissionless</span> +{" "}
-        <span className="mono" style={{ fontSize: 11 }}>record_settlement</span> atomically,
-        and earns <strong style={{ color: "var(--text)" }}>{(rewardPerSettlement / 1e9).toFixed(2)} SUI</strong> per settlement.
+      <div style={{ fontSize: 12, color: "var(--text2)", lineHeight: 1.6 }}>
+        The keeper listens for on-chain <span className="mono" style={{ fontSize: 11 }}>PositionMinted</span> events every 2s,
+        submits settlements atomically, and earns{" "}
+        <strong style={{ color: "var(--text)" }}>{(rewardPerSettlement / 1e9).toFixed(2)} SUI</strong> per settlement.
       </div>
     </div>
   )
