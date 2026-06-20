@@ -47,19 +47,32 @@ export function useNetworkData(pollMs = 30_000): NetworkData {
 
   const refresh = useCallback(async () => {
     try {
-      const [regObj, eventsPage, registrationPage] = await Promise.all([
+      const [regObj, registrationPage] = await Promise.all([
         client.getObject({ id: REGISTRY_ID, options: { showContent: true } }),
-        client.queryEvents({
-          query: { MoveEventType: EVENT_TYPE },
-          order: "descending",
-          limit: 50,
-        }),
         client.queryEvents({
           query: { MoveEventType: KEEPER_REGISTERED_TYPE },
           order: "descending",
           limit: 100,
         }),
       ])
+
+      // Paginate ALL settlement events for accurate per-keeper stats.
+      // Fetch ascending so cursor walk is stable, then reverse for feed display.
+      type SuiEvent = Awaited<ReturnType<typeof client.queryEvents>>["data"][number]
+      const allSettlementEvents: SuiEvent[] = []
+      let cursor: { txDigest: string; eventSeq: string } | undefined = undefined
+      for (;;) {
+        const page = await client.queryEvents({
+          query: { MoveEventType: EVENT_TYPE },
+          order: "ascending",
+          limit: 50,
+          ...(cursor ? { cursor } : {}),
+        })
+        allSettlementEvents.push(...page.data)
+        if (!page.hasNextPage || !page.nextCursor) break
+        cursor = page.nextCursor as { txDigest: string; eventSeq: string }
+      }
+      const settlementData = [...allSettlementEvents].reverse()
 
       // Registry fields
       const fields = (regObj.data?.content as { fields?: Record<string, unknown> })?.fields ?? {}
@@ -70,7 +83,7 @@ export function useNetworkData(pollMs = 30_000): NetworkData {
       )
 
       // Settlement events → per-keeper stats
-      const events: SettlementEvent[] = eventsPage.data.map(e => {
+      const events: SettlementEvent[] = settlementData.map(e => {
         const j = e.parsedJson as Record<string, unknown>
         return {
           keeper:      String(j.keeper ?? ""),

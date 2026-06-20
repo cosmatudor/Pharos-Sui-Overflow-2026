@@ -50,8 +50,8 @@ async function getLiveOracles(): Promise<ApiOracle[]> {
   if (!resp.ok) throw new Error(`predict server error: ${resp.status}`)
   const all: ApiOracle[] = await resp.json()
   return all
-    .filter(o => o.status === "active" && o.settlement_price === null && o.expiry > Date.now() + 60 * 60_000)
-    .sort((a, b) => a.expiry - b.expiry)   // nearest expiry first (at least 1h away)
+    .filter(o => o.status === "active" && o.settlement_price === null && o.expiry > Date.now() + 2 * 60 * 60_000)
+    .sort((a, b) => a.expiry - b.expiry)   // nearest expiry first (at least 2h away — SVI model invalid below that)
 }
 
 // ── Sui helpers ───────────────────────────────────────────────────────────────
@@ -212,12 +212,4 @@ console.log(`
   Strike:   ${strikeFmt}
   Expiry:   ${new Date(oracle.expiry).toISOString()}
   Manager:  ${managerId}
-
-  When this oracle settles (~${expiresIn}h), run:
-    MANAGER_ID=${managerId} make run
-
-  The keeper will scan, find these 2 positions,
-  call redeem_permissionless + record_settlement,
-  and emit SettlementRecorded events.
-  The dashboard will show them within 30s.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`)

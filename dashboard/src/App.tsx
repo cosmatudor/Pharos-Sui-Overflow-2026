@@ -1,21 +1,34 @@
+import { useState } from "react"
 import { useCurrentAccount } from "@mysten/dapp-kit"
 import Header from "./components/Header"
 import StatCards from "./components/StatCards"
 import SettlementFeed from "./components/SettlementFeed"
 import KeeperTable from "./components/KeeperTable"
-import RegisterFlow from "./components/RegisterFlow"
 import HowItWorks from "./components/HowItWorks"
 import HeroCanvas from "./components/HeroCanvas"
+import JoinPage from "./components/JoinPage"
 import { useNetworkData } from "./hooks/useNetworkData"
 import { REGISTRY_ID, EXPLORER_BASE } from "./constants"
 
+type Page = "dashboard" | "join"
+
 export default function App() {
+  const [page, setPage] = useState<Page>("dashboard")
   const account = useCurrentAccount()
   const network = useNetworkData()
 
+  if (page === "join") {
+    return (
+      <>
+        <Header onNavigate={setPage} currentPage={page} />
+        <JoinPage onBack={() => setPage("dashboard")} />
+      </>
+    )
+  }
+
   return (
     <>
-      <Header />
+      <Header onNavigate={setPage} currentPage={page} />
 
       {/* Hero */}
       <section className="hero">
@@ -30,9 +43,12 @@ export default function App() {
             An open network of permissionless keeper nodes that settle DeepBook Predict positions on-chain. Bond SUI, compete, earn rewards.
           </p>
           <div className="hero-ctas">
-            <a href="#register" className="hero-cta-primary">
-              Join the Network →
-            </a>
+            <button
+              className="hero-cta-primary"
+              onClick={() => setPage("join")}
+            >
+              Run a Keeper Node →
+            </button>
             <a href="#network" className="hero-cta-ghost">
               Live Data ↓
             </a>
@@ -80,13 +96,6 @@ export default function App() {
           </div>
         </div>
 
-        <div className="section" id="register">
-          <div className="section-header">
-            <span className="section-title">Join the Network</span>
-          </div>
-          <RegisterFlow account={account} rewardPerSettlement={network.rewardPerSettlement} />
-        </div>
-
         <div className="section">
           <div className="section-header">
             <span className="section-title">How It Works</span>
@@ -110,9 +119,12 @@ export default function App() {
             <a href={`${EXPLORER_BASE}/object/${REGISTRY_ID}`} target="_blank" rel="noopener">
               Explorer ↗
             </a>
-            <a href="https://sui.io" target="_blank" rel="noopener">
-              Sui Testnet
-            </a>
+            <button
+              onClick={() => setPage("join")}
+              style={{ background: "none", border: "none", color: "var(--muted)", cursor: "pointer", fontSize: 12, fontFamily: "var(--font)" }}
+            >
+              Run a Node ↗
+            </button>
           </div>
         </footer>
       </div>

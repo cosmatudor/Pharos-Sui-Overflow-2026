@@ -1,0 +1,25 @@
+# Dev tooling
+.env
+.env.*
+!.env.example
+bin/
+
+# Dashboard (not needed in keeper binary)
+dashboard/
+
+# Move sources (not needed at runtime)
+move/
+
+# Scripts
+scripts/
+
+# Git
+.git/
+.gitignore
+
+# Misc
+*.md
+oracles.json
+docker-compose*.yml
+Makefile
+setup.sh
