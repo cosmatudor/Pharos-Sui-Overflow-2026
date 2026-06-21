@@ -1,8 +1,8 @@
 import WalletButton from "./WalletButton"
 
 interface Props {
-  onNavigate: (page: "dashboard" | "join") => void
-  currentPage: "dashboard" | "join"
+  onNavigate: (page: "dashboard" | "join" | "settlements") => void
+  currentPage: "dashboard" | "join" | "settlements"
 }
 
 export default function Header({ onNavigate, currentPage }: Props) {
@@ -15,17 +15,14 @@ export default function Header({ onNavigate, currentPage }: Props) {
           style={{ cursor: "pointer", border: "none" }}
           aria-label="Dashboard"
         >
-          ⚡
+          <img src="/pharos.png" alt="Pharos" style={{ width: 72, height: 72, objectFit: "cover" }} />
         </button>
-        <div>
-          <button
-            onClick={() => onNavigate("dashboard")}
-            style={{ background: "none", border: "none", cursor: "pointer", padding: 0, textAlign: "left" }}
-          >
-            <div className="header-title">Keeper Network</div>
-            <div className="header-sub">Permissionless settlement · DeepBook Predict · Sui</div>
-          </button>
-        </div>
+        <button
+          onClick={() => onNavigate("dashboard")}
+          style={{ background: "none", border: "none", cursor: "pointer", padding: 0 }}
+        >
+          <span className="header-title">Pharos</span>
+        </button>
       </div>
 
       <div className="header-right">
@@ -34,10 +31,10 @@ export default function Header({ onNavigate, currentPage }: Props) {
           Testnet
         </div>
         <button
-          onClick={() => onNavigate(currentPage === "join" ? "dashboard" : "join")}
-          className={`header-nav-btn ${currentPage === "join" ? "active" : ""}`}
+          onClick={() => onNavigate(currentPage === "dashboard" ? "join" : "dashboard")}
+          className={`header-nav-btn ${currentPage !== "dashboard" ? "active" : ""}`}
         >
-          {currentPage === "join" ? "← Dashboard" : "Run a Node"}
+          {currentPage === "dashboard" ? "Run a Keeper" : "← Dashboard"}
         </button>
         <WalletButton />
       </div>

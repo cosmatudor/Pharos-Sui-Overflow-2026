@@ -6,15 +6,22 @@ import (
 )
 
 // Market represents a single redeemable position on a settled oracle.
+// IsRange distinguishes range positions (LowerStrike/HigherStrike) from
+// binary positions (Strike/IsUp).
 type Market struct {
-	ID        string // composite: oracleID/managerID/strike/isUp
+	ID        string // composite key — unique per position type
 	OracleID  string
 	ManagerID string
 	Trader    string // position owner — receives payout minus keeper tip
 	ExpiryMs  uint64
-	Strike    uint64
-	IsUp      bool
 	Quantity  uint64
+	// Binary position fields (IsRange == false)
+	Strike uint64
+	IsUp   bool
+	// Range position fields (IsRange == true)
+	IsRange      bool
+	LowerStrike  uint64
+	HigherStrike uint64
 }
 
 // Protocol is the chain-specific layer. The deepbook package will implement this.

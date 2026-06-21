@@ -58,6 +58,8 @@ type Protocol struct {
 type Store interface {
 	ListActiveOracleIDs(ctx context.Context) ([]string, error)
 	ListRedeemablePositions(ctx context.Context, oracleIDs []string) ([]store.Position, error)
+	ListRedeemableRangePositions(ctx context.Context, oracleIDs []string) ([]store.RangePosition, error)
+	MarkSkipped(ctx context.Context, marketID string, reason string) error
 }
 
 func New(rpcURL, suiPrivKey, registryPkg, registryID, credentialID string, st Store) (*Protocol, error) {
@@ -83,7 +85,7 @@ func New(rpcURL, suiPrivKey, registryPkg, registryID, credentialID string, st St
 type apiOracle struct {
 	OracleID        string  `json:"oracle_id"`
 	Status          string  `json:"status"`
-	SettlementPrice *uint64 `json:"settlement_price"`
+	SettlementPrice *uint64 `json:"settlement_price"` // nil if not yet settled; 1e9-scaled u64
 }
 
 func (p *Protocol) get(ctx context.Context, path string, out interface{}) error {
@@ -122,17 +124,17 @@ func (p *Protocol) FetchMarkets(ctx context.Context) ([]scanner.Market, error) {
 	if err := p.get(ctx, "/oracles", &oracles); err != nil {
 		return nil, fmt.Errorf("fetch oracles: %w", err)
 	}
-	settledSet := make(map[string]bool, len(oracles))
+	settlementPrices := make(map[string]uint64, len(oracles)) // oracleID → settlement price (1e9-scaled)
 	for _, o := range oracles {
 		if o.Status == "settled" && o.SettlementPrice != nil {
-			settledSet[o.OracleID] = true
+			settlementPrices[o.OracleID] = *o.SettlementPrice
 		}
 	}
 
 	// Step 3: intersect — keep only oracle IDs we know about AND are settled.
 	var settledOracleIDs []string
 	for _, id := range oracleIDs {
-		if settledSet[id] {
+		if _, ok := settlementPrices[id]; ok {
 			settledOracleIDs = append(settledOracleIDs, id)
 		}
 	}
@@ -146,8 +148,12 @@ func (p *Protocol) FetchMarkets(ctx context.Context) ([]scanner.Market, error) {
 	if err != nil {
 		return nil, fmt.Errorf("list redeemable positions: %w", err)
 	}
+	rangePositions, err := p.store.ListRedeemableRangePositions(ctx, settledOracleIDs)
+	if err != nil {
+		return nil, fmt.Errorf("list redeemable range positions: %w", err)
+	}
 
-	markets := make([]scanner.Market, 0, len(positions))
+	markets := make([]scanner.Market, 0, len(positions)+len(rangePositions))
 	for _, pos := range positions {
 		id := pos.OracleID + "/" + pos.ManagerID + "/" +
 			strconv.FormatUint(pos.Expiry, 10) + "/" +
@@ -164,9 +170,38 @@ func (p *Protocol) FetchMarkets(ctx context.Context) ([]scanner.Market, error) {
 			Quantity:  pos.Quantity,
 		})
 	}
+	skipped := 0
+	for _, pos := range rangePositions {
+		id := pos.OracleID + "/" + pos.ManagerID + "/" +
+			strconv.FormatUint(pos.Expiry, 10) + "/" +
+			strconv.FormatUint(pos.LowerStrike, 10) + "/" +
+			strconv.FormatUint(pos.HigherStrike, 10)
 
-	fmt.Printf("[scan] %d settled oracles, %d redeemable positions\n",
-		len(settledOracleIDs), len(markets))
+		// Filter: settlement price must be inside [lower_strike, higher_strike].
+		// Positions outside the range pay nothing — redeem_range aborts on-chain.
+		sp := settlementPrices[pos.OracleID]
+		if sp < pos.LowerStrike || sp > pos.HigherStrike {
+			skipped++
+			_ = p.store.MarkSkipped(ctx, id, "out_of_range")
+			continue
+		}
+
+		markets = append(markets, scanner.Market{
+			ID:           id,
+			OracleID:     pos.OracleID,
+			ManagerID:    pos.ManagerID,
+			Trader:       pos.Trader,
+			ExpiryMs:     pos.Expiry,
+			IsRange:      true,
+			LowerStrike:  pos.LowerStrike,
+			HigherStrike: pos.HigherStrike,
+			Quantity:     pos.Quantity,
+		})
+	}
+
+	inRangeCount := len(rangePositions) - skipped
+	fmt.Printf("[scan] %d settled oracles, %d redeemable positions (%d binary, %d range, %d out-of-range skipped)\n",
+		len(settledOracleIDs), len(markets), len(positions), inRangeCount, skipped)
 	return markets, nil
 }
 
@@ -344,6 +379,101 @@ func marketKeyDirection(isUp bool) uint8 {
 	return 1
 }
 
+// resolveRangePositionsTableID fetches and caches the range_positions Table ID from a manager.
+func (p *Protocol) resolveRangePositionsTableID(ctx context.Context, managerID string) (string, error) {
+	cacheKey := managerID + "/range"
+	if v, ok := p.managerTableIDs.Load(cacheKey); ok {
+		return v.(string), nil
+	}
+	resp, err := p.client.SuiGetObject(ctx, models.SuiGetObjectRequest{
+		ObjectId: managerID,
+		Options:  models.SuiObjectDataOptions{ShowContent: true},
+	})
+	if err != nil {
+		return "", fmt.Errorf("get manager %s: %w", managerID, err)
+	}
+	if resp.Data == nil || resp.Data.Content == nil {
+		return "", fmt.Errorf("manager %s has no content", managerID)
+	}
+	contentBytes, err := json.Marshal(resp.Data.Content)
+	if err != nil {
+		return "", err
+	}
+	var content struct {
+		Fields struct {
+			RangePositions struct {
+				Fields struct {
+					ID struct {
+						ID string `json:"id"`
+					} `json:"id"`
+				} `json:"fields"`
+			} `json:"range_positions"`
+		} `json:"fields"`
+	}
+	if err := json.Unmarshal(contentBytes, &content); err != nil {
+		return "", fmt.Errorf("parse manager content: %w", err)
+	}
+	tableID := content.Fields.RangePositions.Fields.ID.ID
+	if tableID == "" {
+		return "", fmt.Errorf("range_positions table ID empty for manager %s", managerID)
+	}
+	p.managerTableIDs.Store(cacheKey, tableID)
+	return tableID, nil
+}
+
+// onChainRangeQty returns the remaining quantity for a range position on-chain.
+// Returns 0 if the position is fully redeemed or doesn't exist.
+func (p *Protocol) onChainRangeQty(ctx context.Context, m scanner.Market) uint64 {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	tableID, err := p.resolveRangePositionsTableID(ctx, m.ManagerID)
+	if err != nil {
+		fmt.Printf("[precheck] manager=%s range table resolve error: %v → fail open\n", m.ManagerID, err)
+		return m.Quantity
+	}
+
+	var result struct {
+		Error *struct {
+			Code string `json:"code"`
+		} `json:"error"`
+		Data *struct {
+			Content *struct {
+				Fields *struct {
+					Value string `json:"value"`
+				} `json:"fields"`
+			} `json:"content"`
+		} `json:"data"`
+	}
+	err = p.suiRPC(ctx, "suix_getDynamicFieldObject", []interface{}{
+		tableID,
+		map[string]interface{}{
+			"type": PredictPkg + "::range_key::RangeKey",
+			"value": map[string]interface{}{
+				"oracle_id":     m.OracleID,
+				"expiry":        strconv.FormatUint(m.ExpiryMs, 10),
+				"lower_strike":  strconv.FormatUint(m.LowerStrike, 10),
+				"higher_strike": strconv.FormatUint(m.HigherStrike, 10),
+			},
+		},
+	}, &result)
+	if err != nil {
+		fmt.Printf("[precheck] oracle=%s range rpc error: %v → fail open\n", m.OracleID, err)
+		return m.Quantity
+	}
+	if result.Error != nil {
+		return 0
+	}
+	if result.Data == nil || result.Data.Content == nil || result.Data.Content.Fields == nil {
+		return 0
+	}
+	qty, err := strconv.ParseUint(result.Data.Content.Fields.Value, 10, 64)
+	if err != nil {
+		return m.Quantity
+	}
+	return qty
+}
+
 // onChainQty returns the actual remaining quantity stored on-chain for this
 // position. Returns 0 if the position doesn't exist, has been fully redeemed
 // (value == 0 but entry persists), or the table entry was removed.
@@ -429,6 +559,21 @@ func isAlreadyRedeemedError(effectsErr string) bool {
 		(strings.Contains(effectsErr, ", 1)") || strings.Contains(effectsErr, "0x1)"))
 }
 
+// isAlreadyRangeRedeemedError detects a MoveAbort from predict_manager::decrease_range
+// (abort code 1) — the range position no longer exists on-chain.
+func isAlreadyRangeRedeemedError(effectsErr string) bool {
+	return strings.Contains(effectsErr, "predict_manager") &&
+		strings.Contains(effectsErr, "decrease_range") &&
+		(strings.Contains(effectsErr, ", 1)") || strings.Contains(effectsErr, "0x1)"))
+}
+
+// isRangeOutOfRangeError detects a MoveAbort from predict::redeem_range (abort code 1)
+// — the settlement price is outside [lower_strike, higher_strike], zero payout.
+func isRangeOutOfRangeError(effectsErr string) bool {
+	return strings.Contains(effectsErr, "redeem_range") &&
+		(strings.Contains(effectsErr, ", 1)") || strings.Contains(effectsErr, "0x1)"))
+}
+
 // isGasError detects an insufficient gas balance error from the RPC layer.
 func isGasError(errStr string) bool {
 	return strings.Contains(errStr, "Balance of gas object") &&
@@ -444,10 +589,12 @@ func isGasError(errStr string) bool {
 // market — the caller should treat this as success, not failure.
 func (p *Protocol) Settle(ctx context.Context, m scanner.Market) (string, error) {
 	// Pre-check: read the actual on-chain quantity before acquiring the mutex.
-	// Runs concurrently across all workers — no lock held.
-	// Returns 0 if the position is gone or zero-balanced (entry persists but qty=0).
-	// Fails open on RPC error: uses the API quantity so the PTB remains authoritative.
-	qty := p.onChainQty(ctx, m)
+	var qty uint64
+	if m.IsRange {
+		qty = p.onChainRangeQty(ctx, m)
+	} else {
+		qty = p.onChainQty(ctx, m)
+	}
 	if qty == 0 {
 		return "", keepererrors.ErrAlreadyRedeemed
 	}
@@ -460,8 +607,13 @@ func (p *Protocol) Settle(ctx context.Context, m scanner.Market) (string, error)
 	// Use the verified on-chain quantity — never the stale API value.
 	m.Quantity = qty
 
-	fmt.Printf("[ptb] START oracle=%s manager=%s expiry=%d strike=%d isUp=%v qty=%d trader=%s\n",
-		m.OracleID, m.ManagerID, m.ExpiryMs, m.Strike, m.IsUp, m.Quantity, m.Trader)
+	if m.IsRange {
+		fmt.Printf("[ptb] START range oracle=%s manager=%s expiry=%d lower=%d higher=%d qty=%d trader=%s\n",
+			m.OracleID, m.ManagerID, m.ExpiryMs, m.LowerStrike, m.HigherStrike, m.Quantity, m.Trader)
+	} else {
+		fmt.Printf("[ptb] START oracle=%s manager=%s expiry=%d strike=%d isUp=%v qty=%d trader=%s\n",
+			m.OracleID, m.ManagerID, m.ExpiryMs, m.Strike, m.IsUp, m.Quantity, m.Trader)
+	}
 
 	// Resolve ISVs for shared objects.
 	registryISV, err := p.initialSharedVersion(ctx, p.registryID)
@@ -545,45 +697,80 @@ func (p *Protocol) Settle(ctx context.Context, m scanner.Market) (string, error)
 	predictPkg := models.SuiAddress(PredictPkg)
 	registryPkg := models.SuiAddress(p.registryPkg)
 
-	// Step 1: build MarketKey.
-	key := tx.MoveCall(predictPkg, "market_key", "new",
-		[]transaction.TypeTag{},
-		[]transaction.Argument{
-			tx.Pure(m.OracleID),
-			tx.Pure(m.ExpiryMs),
-			tx.Pure(m.Strike),
-			tx.Pure(m.IsUp),
-		},
-	)
-
-	// Step 2: redeem the position — payout flows to the position owner's manager.
-	tx.MoveCall(predictPkg, "predict", "redeem_permissionless",
-		[]transaction.TypeTag{typeTag},
-		[]transaction.Argument{
-			tx.Object(predictArg),
-			tx.Object(managerArg),
-			tx.Object(oracleArg),
-			key,
-			tx.Pure(m.Quantity),
-			tx.Object(clockArg),
-		},
-	)
-
-	// Step 3: record settlement on-chain — idempotency guard + keeper reward.
-	// PTB atomicity guarantees this only executes if step 2 succeeded.
-	tx.MoveCall(registryPkg, "registry", "record_settlement",
-		[]transaction.TypeTag{},
-		[]transaction.Argument{
-			tx.Object(registryArg),
-			tx.Object(credArg),
-			tx.Pure(m.OracleID),
-			tx.Pure(m.ManagerID),
-			tx.Pure(m.ExpiryMs),
-			tx.Pure(m.Strike),
-			tx.Pure(m.IsUp),
-			tx.Object(clockArg),
-		},
-	)
+	if m.IsRange {
+		// Step 1: build range_key
+		key := tx.MoveCall(predictPkg, "range_key", "new",
+			[]transaction.TypeTag{},
+			[]transaction.Argument{
+				tx.Pure(m.OracleID),
+				tx.Pure(m.ExpiryMs),
+				tx.Pure(m.LowerStrike),
+				tx.Pure(m.HigherStrike),
+			},
+		)
+		// Step 2: redeem range position (payout to position owner)
+		tx.MoveCall(predictPkg, "predict", "redeem_range",
+			[]transaction.TypeTag{typeTag},
+			[]transaction.Argument{
+				tx.Object(predictArg),
+				tx.Object(managerArg),
+				tx.Object(oracleArg),
+				key,
+				tx.Pure(m.Quantity),
+				tx.Object(clockArg),
+			},
+		)
+		// Step 3: record in registry — idempotency guard + keeper reward
+		tx.MoveCall(registryPkg, "registry", "record_range_settlement",
+			[]transaction.TypeTag{},
+			[]transaction.Argument{
+				tx.Object(registryArg),
+				tx.Object(credArg),
+				tx.Pure(m.OracleID),
+				tx.Pure(m.ManagerID),
+				tx.Pure(m.ExpiryMs),
+				tx.Pure(m.LowerStrike),
+				tx.Pure(m.HigherStrike),
+				tx.Object(clockArg),
+			},
+		)
+	} else {
+		// Binary position: market_key::new + redeem_permissionless + registry record.
+		key := tx.MoveCall(predictPkg, "market_key", "new",
+			[]transaction.TypeTag{},
+			[]transaction.Argument{
+				tx.Pure(m.OracleID),
+				tx.Pure(m.ExpiryMs),
+				tx.Pure(m.Strike),
+				tx.Pure(m.IsUp),
+			},
+		)
+		tx.MoveCall(predictPkg, "predict", "redeem_permissionless",
+			[]transaction.TypeTag{typeTag},
+			[]transaction.Argument{
+				tx.Object(predictArg),
+				tx.Object(managerArg),
+				tx.Object(oracleArg),
+				key,
+				tx.Pure(m.Quantity),
+				tx.Object(clockArg),
+			},
+		)
+		// Step 3: record settlement — idempotency guard + keeper reward.
+		tx.MoveCall(registryPkg, "registry", "record_settlement",
+			[]transaction.TypeTag{},
+			[]transaction.Argument{
+				tx.Object(registryArg),
+				tx.Object(credArg),
+				tx.Pure(m.OracleID),
+				tx.Pure(m.ManagerID),
+				tx.Pure(m.ExpiryMs),
+				tx.Pure(m.Strike),
+				tx.Pure(m.IsUp),
+				tx.Object(clockArg),
+			},
+		)
+	}
 
 	rsp, err := tx.Execute(ctx, models.SuiTransactionBlockOptions{
 		ShowEffects: true,
@@ -594,7 +781,7 @@ func (p *Protocol) Settle(ctx context.Context, m scanner.Market) (string, error)
 		if isGasError(errStr) {
 			return "", keepererrors.ErrInsufficientGas
 		}
-		if isAlreadyRedeemedError(errStr) {
+		if isAlreadyRedeemedError(errStr) || isAlreadyRangeRedeemedError(errStr) || isRangeOutOfRangeError(errStr) {
 			return "", keepererrors.ErrAlreadyRedeemed
 		}
 		if isAlreadySettledError(errStr) {
@@ -607,7 +794,7 @@ func (p *Protocol) Settle(ctx context.Context, m scanner.Market) (string, error)
 		if isAlreadySettledError(rsp.Effects.Status.Error) {
 			return "", keepererrors.ErrAlreadySettled
 		}
-		if isAlreadyRedeemedError(rsp.Effects.Status.Error) {
+		if isAlreadyRedeemedError(rsp.Effects.Status.Error) || isAlreadyRangeRedeemedError(rsp.Effects.Status.Error) || isRangeOutOfRangeError(rsp.Effects.Status.Error) {
 			return "", keepererrors.ErrAlreadyRedeemed
 		}
 		return "", fmt.Errorf("ptb failed on chain: %s", rsp.Effects.Status.Error)

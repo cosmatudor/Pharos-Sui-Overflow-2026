@@ -4,7 +4,10 @@ import { EXPLORER_BASE } from "../constants"
 interface Props {
   events: SettlementEvent[]
   loading: boolean
+  onViewAll: () => void
 }
+
+const PAGE = 20
 
 function shortId(id: string) {
   return `${id.slice(0, 6)}…${id.slice(-4)}`
@@ -13,7 +16,7 @@ function shortId(id: string) {
 function relativeTime(ts: number) {
   if (!ts) return ""
   const diff = (Date.now() - ts) / 1000
-  if (diff < 60)  return `${Math.floor(diff)}s ago`
+  if (diff < 60)   return `${Math.floor(diff)}s ago`
   if (diff < 3600) return `${Math.floor(diff / 60)}m ago`
   return `${Math.floor(diff / 3600)}h ago`
 }
@@ -24,7 +27,11 @@ function formatStrike(strike: number) {
   return `$${d.toFixed(0)}`
 }
 
-export default function SettlementFeed({ events, loading }: Props) {
+function formatRange(lower: number, higher: number) {
+  return `${formatStrike(lower)}–${formatStrike(higher)}`
+}
+
+export default function SettlementFeed({ events, loading, onViewAll }: Props) {
   if (loading) {
     return (
       <div>
@@ -60,14 +67,23 @@ export default function SettlementFeed({ events, loading }: Props) {
         <span>Reward</span>
         <span />
       </div>
-      {events.slice(0, 20).map((ev, i) => (
+
+      {events.slice(0, PAGE).map((ev, i) => (
         <div key={`${ev.txDigest}-${i}`} className="feed-row">
           <span className="feed-oracle" title={ev.oracle_id}>{shortId(ev.oracle_id)}</span>
           <span className="feed-keeper feed-col-keeper" title={ev.keeper}>{shortId(ev.keeper)}</span>
-          <span className={`feed-dir ${ev.is_up ? "up" : "down"}`}>
-            {ev.is_up ? "UP" : "DOWN"}
+          {ev.is_range ? (
+            <span className="feed-dir" style={{ color: "var(--accent)" }}>RANGE</span>
+          ) : (
+            <span className={`feed-dir ${ev.is_up ? "up" : "down"}`}>
+              {ev.is_up ? "UP" : "DOWN"}
+            </span>
+          )}
+          <span className="feed-strike">
+            {ev.is_range
+              ? formatRange(ev.lower_strike, ev.higher_strike)
+              : formatStrike(ev.strike)}
           </span>
-          <span className="feed-strike">{formatStrike(ev.strike)}</span>
           <span className="feed-reward">+{(ev.reward_paid / 1e9).toFixed(2)}</span>
           <a
             href={`${EXPLORER_BASE}/tx/${ev.txDigest}`}
@@ -80,6 +96,12 @@ export default function SettlementFeed({ events, loading }: Props) {
           </a>
         </div>
       ))}
+
+      {events.length > PAGE && (
+        <button className="feed-show-all-btn" onClick={onViewAll}>
+          View all {events.length} settlements →
+        </button>
+      )}
     </div>
   )
 }

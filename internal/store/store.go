@@ -24,7 +24,7 @@ func New(ctx context.Context, connString string) (*Store, error) {
 	return &Store{pool: pool}, nil
 }
 
-// Position is a minted predict position discovered via on-chain events.
+// Position is a minted binary predict position discovered via on-chain events.
 type Position struct {
 	ManagerID string
 	OracleID  string
@@ -33,6 +33,17 @@ type Position struct {
 	IsUp      bool
 	Quantity  uint64
 	Trader    string
+}
+
+// RangePosition is a minted range predict position discovered via on-chain events.
+type RangePosition struct {
+	ManagerID    string
+	OracleID     string
+	Expiry       uint64
+	LowerStrike  uint64
+	HigherStrike uint64
+	Quantity     uint64
+	Trader       string
 }
 
 func (s *Store) Migrate(ctx context.Context) error {
@@ -57,6 +68,17 @@ func (s *Store) Migrate(ctx context.Context) error {
 			PRIMARY KEY (manager_id, oracle_id, expiry, strike, is_up)
 		);
 
+		CREATE TABLE IF NOT EXISTS range_positions (
+			manager_id    TEXT   NOT NULL,
+			oracle_id     TEXT   NOT NULL,
+			expiry        BIGINT NOT NULL,
+			lower_strike  BIGINT NOT NULL,
+			higher_strike BIGINT NOT NULL,
+			quantity      BIGINT NOT NULL,
+			trader        TEXT   NOT NULL,
+			PRIMARY KEY (manager_id, oracle_id, expiry, lower_strike, higher_strike)
+		);
+
 		CREATE TABLE IF NOT EXISTS event_cursors (
 			event_type TEXT PRIMARY KEY,
 			tx_digest  TEXT NOT NULL,
@@ -78,12 +100,59 @@ func (s *Store) UpsertPosition(ctx context.Context, p Position) error {
 	return err
 }
 
+// UpsertRangePosition inserts or updates a range position from a RangeMinted event.
+func (s *Store) UpsertRangePosition(ctx context.Context, p RangePosition) error {
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO range_positions (manager_id, oracle_id, expiry, lower_strike, higher_strike, quantity, trader)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		ON CONFLICT (manager_id, oracle_id, expiry, lower_strike, higher_strike)
+		DO UPDATE SET quantity = range_positions.quantity + EXCLUDED.quantity
+	`, p.ManagerID, p.OracleID, p.Expiry, p.LowerStrike, p.HigherStrike, p.Quantity, p.Trader)
+	return err
+}
+
+// ListRedeemableRangePositions returns range positions for the given settled oracle IDs
+// whose market ID is not already settled or in-flight.
+// Market ID format: oracleID/managerID/expiry/lowerStrike/higherStrike
+func (s *Store) ListRedeemableRangePositions(ctx context.Context, oracleIDs []string) ([]RangePosition, error) {
+	if len(oracleIDs) == 0 {
+		return nil, nil
+	}
+	rows, err := s.pool.Query(ctx, `
+		SELECT p.manager_id, p.oracle_id, p.expiry, p.lower_strike, p.higher_strike, p.quantity, p.trader
+		FROM range_positions p
+		WHERE p.oracle_id = ANY($1)
+		  AND NOT EXISTS (
+		    SELECT 1 FROM markets m
+		    WHERE m.id = p.oracle_id || '/' || p.manager_id || '/' ||
+		                 p.expiry::text || '/' || p.lower_strike::text || '/' || p.higher_strike::text
+		      AND m.status IN ('settled', 'in_flight')
+		  )
+	`, oracleIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []RangePosition
+	for rows.Next() {
+		var p RangePosition
+		if err := rows.Scan(&p.ManagerID, &p.OracleID, &p.Expiry, &p.LowerStrike, &p.HigherStrike, &p.Quantity, &p.Trader); err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
 // ListActiveOracleIDs returns distinct oracle IDs with positions expiring within
 // the last 48 h (catches oracles that may have settled recently).
+// Includes both binary and range positions.
 func (s *Store) ListActiveOracleIDs(ctx context.Context) ([]string, error) {
 	cutoff := time.Now().UnixMilli() - 48*3_600_000
 	rows, err := s.pool.Query(ctx, `
 		SELECT DISTINCT oracle_id FROM positions WHERE expiry > $1
+		UNION
+		SELECT DISTINCT oracle_id FROM range_positions WHERE expiry > $1
 	`, cutoff)
 	if err != nil {
 		return nil, err
@@ -220,6 +289,18 @@ func (s *Store) MarkFailed(ctx context.Context, marketID string, reason string) 
 	_, err := s.pool.Exec(ctx, `
 		UPDATE markets SET status = 'failed', failure_reason = $2, updated_at = NOW()
 		WHERE id = $1
+	`, marketID, reason)
+	return err
+}
+
+// MarkSkipped inserts a market record directly as 'settled' so the position
+// is never queued again. Used for range positions whose settlement price is
+// outside the strike range (zero payout — not redeemable on-chain).
+func (s *Store) MarkSkipped(ctx context.Context, marketID string, reason string) error {
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO markets (id, status, tx_hash)
+		VALUES ($1, 'settled', $2)
+		ON CONFLICT (id) DO NOTHING
 	`, marketID, reason)
 	return err
 }

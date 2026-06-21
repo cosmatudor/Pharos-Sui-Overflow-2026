@@ -1,12 +1,17 @@
 import { useEffect, useState, useCallback } from "react"
 import { SuiClient } from "@mysten/sui/client"
-import { REGISTRY_ID, EVENT_TYPE, KEEPER_REGISTERED_TYPE, RPC_URL } from "../constants"
+import { REGISTRY_ID, EVENT_TYPE, RANGE_EVENT_TYPE, KEEPER_REGISTERED_TYPE, RPC_URL } from "../constants"
 
 export interface SettlementEvent {
   keeper: string
   oracle_id: string
+  is_range: boolean
+  // binary-only fields
   is_up: boolean
   strike: number
+  // range-only fields
+  lower_strike: number
+  higher_strike: number
   reward_paid: number
   timestampMs: number
   txDigest: string
@@ -56,43 +61,62 @@ export function useNetworkData(pollMs = 30_000): NetworkData {
         }),
       ])
 
-      // Paginate ALL settlement events for accurate per-keeper stats.
-      // Fetch ascending so cursor walk is stable, then reverse for feed display.
+      // Paginate ALL settlement events (binary + range) for accurate per-keeper stats.
       type SuiEvent = Awaited<ReturnType<typeof client.queryEvents>>["data"][number]
-      const allSettlementEvents: SuiEvent[] = []
-      let cursor: { txDigest: string; eventSeq: string } | undefined = undefined
-      for (;;) {
-        const page = await client.queryEvents({
-          query: { MoveEventType: EVENT_TYPE },
-          order: "ascending",
-          limit: 50,
-          ...(cursor ? { cursor } : {}),
-        })
-        allSettlementEvents.push(...page.data)
-        if (!page.hasNextPage || !page.nextCursor) break
-        cursor = page.nextCursor as { txDigest: string; eventSeq: string }
+
+      async function drainEvents(eventType: string): Promise<SuiEvent[]> {
+        const acc: SuiEvent[] = []
+        let cursor: { txDigest: string; eventSeq: string } | undefined = undefined
+        for (;;) {
+          const page = await client.queryEvents({
+            query: { MoveEventType: eventType },
+            order: "ascending",
+            limit: 50,
+            ...(cursor ? { cursor } : {}),
+          })
+          acc.push(...page.data)
+          if (!page.hasNextPage || !page.nextCursor) break
+          cursor = page.nextCursor as { txDigest: string; eventSeq: string }
+        }
+        return acc
       }
-      const settlementData = [...allSettlementEvents].reverse()
+
+      const [binaryEvents, rangeEvents] = await Promise.all([
+        drainEvents(EVENT_TYPE),
+        drainEvents(RANGE_EVENT_TYPE),
+      ])
+
+      // Merge and sort descending by timestamp for the feed
+      const settlementData = [...binaryEvents, ...rangeEvents]
+        .sort((a, b) => Number(b.timestampMs ?? 0) - Number(a.timestampMs ?? 0))
 
       // Registry fields
       const fields = (regObj.data?.content as { fields?: Record<string, unknown> })?.fields ?? {}
       const treasury = Number(fields.treasury ?? 0)
       const rewardPerSettlement = Number(fields.reward_per_settlement ?? 0)
-      const totalSettlements = Number(
+      const binaryCount = Number(
         (fields.settled_markets as { fields?: { size?: string } })?.fields?.size ?? 0
       )
+      const rangeCount = Number(
+        (fields.range_settled_markets as { fields?: { size?: string } })?.fields?.size ?? 0
+      )
+      const totalSettlements = binaryCount + rangeCount
 
       // Settlement events → per-keeper stats
       const events: SettlementEvent[] = settlementData.map(e => {
         const j = e.parsedJson as Record<string, unknown>
+        const isRange = "lower_strike" in j
         return {
-          keeper:      String(j.keeper ?? ""),
-          oracle_id:   String(j.oracle_id ?? ""),
-          is_up:       Boolean(j.is_up),
-          strike:      Number(j.strike ?? 0),
-          reward_paid: Number(j.reward_paid ?? 0),
-          timestampMs: Number(e.timestampMs ?? 0),
-          txDigest:    e.id.txDigest,
+          keeper:       String(j.keeper ?? ""),
+          oracle_id:    String(j.oracle_id ?? ""),
+          is_range:     isRange,
+          is_up:        Boolean(j.is_up),
+          strike:       Number(j.strike ?? 0),
+          lower_strike:  Number(j.lower_strike ?? 0),
+          higher_strike: Number(j.higher_strike ?? 0),
+          reward_paid:  Number(j.reward_paid ?? 0),
+          timestampMs:  Number(e.timestampMs ?? 0),
+          txDigest:     e.id.txDigest,
         }
       })
 

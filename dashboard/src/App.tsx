@@ -6,11 +6,13 @@ import SettlementFeed from "./components/SettlementFeed"
 import KeeperTable from "./components/KeeperTable"
 import HowItWorks from "./components/HowItWorks"
 import HeroCanvas from "./components/HeroCanvas"
+import LighthouseSVG from "./components/LighthouseSVG"
 import JoinPage from "./components/JoinPage"
+import SettlementsPage from "./components/SettlementsPage"
 import { useNetworkData } from "./hooks/useNetworkData"
 import { REGISTRY_ID, EXPLORER_BASE } from "./constants"
 
-type Page = "dashboard" | "join"
+type Page = "dashboard" | "join" | "settlements"
 
 export default function App() {
   const [page, setPage] = useState<Page>("dashboard")
@@ -26,6 +28,19 @@ export default function App() {
     )
   }
 
+  if (page === "settlements") {
+    return (
+      <>
+        <Header onNavigate={setPage} currentPage={page} />
+        <SettlementsPage
+          events={network.events}
+          loading={network.loading}
+          onBack={() => setPage("dashboard")}
+        />
+      </>
+    )
+  }
+
   return (
     <>
       <Header onNavigate={setPage} currentPage={page} />
@@ -35,6 +50,7 @@ export default function App() {
         <HeroCanvas />
         <div className="hero-content">
           <div className="hero-badge">Live on Sui Testnet</div>
+          <div id="pharos-lighthouse"><LighthouseSVG /></div>
           <h1 className="hero-title">
             Keep DeFi<br />
             <span>Running.</span>
@@ -47,14 +63,13 @@ export default function App() {
               className="hero-cta-primary"
               onClick={() => setPage("join")}
             >
-              Run a Keeper Node →
+              Run a Pharos Keeper →
             </button>
             <a href="#network" className="hero-cta-ghost">
               Live Data ↓
             </a>
           </div>
         </div>
-        <div className="hero-scroll-hint">scroll</div>
       </section>
 
       {/* Main content */}
@@ -79,7 +94,7 @@ export default function App() {
               )}
             </div>
             <div className="card">
-              <SettlementFeed events={network.events} loading={network.loading} />
+              <SettlementFeed events={network.events} loading={network.loading} onViewAll={() => setPage("settlements")} />
             </div>
           </div>
 
@@ -123,7 +138,7 @@ export default function App() {
               onClick={() => setPage("join")}
               style={{ background: "none", border: "none", color: "var(--muted)", cursor: "pointer", fontSize: 12, fontFamily: "var(--font)" }}
             >
-              Run a Node ↗
+              Run a Keeper ↗
             </button>
           </div>
         </footer>

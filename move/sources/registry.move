@@ -23,8 +23,7 @@ const EInsufficientTreasury: u64 = 1;
 
 // === Events ===
 
-/// Emitted on every successful settlement recorded in the registry.
-/// Off-chain dashboards subscribe to this event type to build the live feed.
+/// Emitted on every successful binary settlement recorded in the registry.
 public struct SettlementRecorded has copy, drop {
     keeper: address,
     oracle_id: address,
@@ -35,11 +34,20 @@ public struct SettlementRecorded has copy, drop {
     reward_paid: u64,
 }
 
+/// Emitted on every successful range settlement recorded in the registry.
+public struct RangeSettlementRecorded has copy, drop {
+    keeper: address,
+    oracle_id: address,
+    manager_id: address,
+    expiry: u64,
+    lower_strike: u64,
+    higher_strike: u64,
+    reward_paid: u64,
+}
+
 // === Structs ===
 
-/// Uniquely identifies one manager's redeemable position.
-/// Mirrors DeepBook Predict's MarketKey fields without a compile-time
-/// dependency on the deepbook_predict package.
+/// Uniquely identifies one manager's binary position.
 public struct SettlementKey has copy, drop, store {
     oracle_id: address,
     manager_id: address,
@@ -48,11 +56,22 @@ public struct SettlementKey has copy, drop, store {
     is_up: bool,
 }
 
+/// Uniquely identifies one manager's range position.
+public struct RangeSettlementKey has copy, drop, store {
+    oracle_id: address,
+    manager_id: address,
+    expiry: u64,
+    lower_strike: u64,
+    higher_strike: u64,
+}
+
 /// Shared object — one per deployment.
 public struct Registry has key {
     id: UID,
-    /// keeper address that settled each market. Primary idempotency guard.
+    /// Binary settlements — keeper address that settled each market.
     settled_markets: Table<SettlementKey, address>,
+    /// Range settlements — keeper address that settled each range market.
+    range_settled_markets: Table<RangeSettlementKey, address>,
     /// SUI reward paid per successful settlement (MIST).
     reward_per_settlement: u64,
     /// Treasury funded by the protocol or community.
@@ -68,6 +87,7 @@ fun init(ctx: &mut TxContext) {
     transfer::share_object(Registry {
         id: object::new(ctx),
         settled_markets: table::new(ctx),
+        range_settled_markets: table::new(ctx),
         reward_per_settlement: 100_000_000, // 0.1 SUI default
         treasury: balance::zero(),
     });
@@ -123,6 +143,48 @@ public fun record_settlement(
     });
 }
 
+#[allow(lint(self_transfer))]
+/// Record that this keeper settled a range position and pay the reward.
+///
+/// MUST be called after predict::redeem_range in the same PTB.
+public fun record_range_settlement(
+    registry: &mut Registry,
+    cred: &mut KeeperCredential,
+    oracle_id: address,
+    manager_id: address,
+    expiry: u64,
+    lower_strike: u64,
+    higher_strike: u64,
+    clk: &Clock,
+    ctx: &mut TxContext,
+) {
+    credential::assert_active(cred, clk, ctx);
+
+    let key = RangeSettlementKey { oracle_id, manager_id, expiry, lower_strike, higher_strike };
+    assert!(!registry.range_settled_markets.contains(key), EAlreadySettled);
+
+    registry.range_settled_markets.add(key, ctx.sender());
+    credential::increment_jobs(cred);
+
+    let reward_paid = if (registry.treasury.value() >= registry.reward_per_settlement) {
+        let reward = registry.treasury.split(registry.reward_per_settlement);
+        transfer::public_transfer(reward.into_coin(ctx), ctx.sender());
+        registry.reward_per_settlement
+    } else {
+        0
+    };
+
+    event::emit(RangeSettlementRecorded {
+        keeper: ctx.sender(),
+        oracle_id,
+        manager_id,
+        expiry,
+        lower_strike,
+        higher_strike,
+        reward_paid,
+    });
+}
+
 // === Treasury Management ===
 
 /// Anyone can top up the treasury.
@@ -159,4 +221,17 @@ public fun is_settled(
     is_up: bool,
 ): bool {
     registry.settled_markets.contains(SettlementKey { oracle_id, manager_id, expiry, strike, is_up })
+}
+
+public fun is_range_settled(
+    registry: &Registry,
+    oracle_id: address,
+    manager_id: address,
+    expiry: u64,
+    lower_strike: u64,
+    higher_strike: u64,
+): bool {
+    registry.range_settled_markets.contains(
+        RangeSettlementKey { oracle_id, manager_id, expiry, lower_strike, higher_strike }
+    )
 }

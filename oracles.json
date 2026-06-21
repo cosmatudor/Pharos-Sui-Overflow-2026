@@ -1,43 +1,693 @@
 [
   {
-    "oracle_id": "0x509f610dc251af66fa80e73ddcecde1d13eb9b76688b051a535c99dccf4908e7",
+    "oracle_id": "0x14900e0769ddcdfa0151740cf2fbff1e87b82db867b344ac2303bb3a4bec75fa",
+    "status": "created",
+    "settlement_price": null
+  },
+  {
+    "oracle_id": "0xa01af11f4a40073c3c81d16c929666dea8f293ba330d3080602dc303709ccecf",
     "status": "active",
     "settlement_price": null
+  },
+  {
+    "oracle_id": "0x290da4ae4a5e81839dcf219267a2739974296aaaf7842b02c08d4cfa62216549",
+    "status": "active",
+    "settlement_price": null
+  },
+  {
+    "oracle_id": "0x4f9830e9b0ab27ace1136efbf9c8bdcb75c5f8779901496374d980414385d23f",
+    "status": "active",
+    "settlement_price": null
+  },
+  {
+    "oracle_id": "0x8ee590190eb03130deaafd0a8635ebabf04252269a74cdd1a3adc6094ec22a1b",
+    "status": "active",
+    "settlement_price": null
+  },
+  {
+    "oracle_id": "0x90345c829f47ab39d0d5d7f84e6197f4529a3be4ab18e6409607e75664685b71",
+    "status": "active",
+    "settlement_price": null
+  },
+  {
+    "oracle_id": "0xcc4485abb2afcc22286f8f88e7d82ee620ad049bd452d5ffbf973846146f230c",
+    "status": "active",
+    "settlement_price": null
+  },
+  {
+    "oracle_id": "0xb30ef1dd79f687fa3456a9d57a9e2ad99165fe04da350060e4af61a3e8975ca8",
+    "status": "active",
+    "settlement_price": null
+  },
+  {
+    "oracle_id": "0x7ac6010488db4476ffaf4781168c37930771f9dcd9605e861efa342ab2ecd0bd",
+    "status": "active",
+    "settlement_price": null
+  },
+  {
+    "oracle_id": "0x43c9c3504b650765ed39cce6728d4690ec342a4c22b1b925ae4d0af8e0167a65",
+    "status": "settled",
+    "settlement_price": 63898526003760
+  },
+  {
+    "oracle_id": "0x1cbf9470b831164aefaf550f2205b99d9d776bae1a74e1727b8dba76125672a1",
+    "status": "settled",
+    "settlement_price": 64038269822287
+  },
+  {
+    "oracle_id": "0x01fd3a5246381091f601ce323cd2cb22cc72076c0469765768fb1f30a5b3f8a5",
+    "status": "settled",
+    "settlement_price": 64091462824484
+  },
+  {
+    "oracle_id": "0x1daa8919d4c15397cba35096573d9366e1e1e89e78688b661e8e0f694b6e7baa",
+    "status": "active",
+    "settlement_price": null
+  },
+  {
+    "oracle_id": "0xa9635cece63e5fed4fd2b7e02c49572e5f2f6c10a017eb1b558819848522f47e",
+    "status": "settled",
+    "settlement_price": 64138891006590
+  },
+  {
+    "oracle_id": "0xfc682ab0be0c4321733a6ef347a74b2d2c68c83985a11d65bd6594ffe1d7ce49",
+    "status": "settled",
+    "settlement_price": 64154371188780
+  },
+  {
+    "oracle_id": "0xe94fa13f3797e21a743507338cc72a1ce08f2ae8cada5061939ddfd39461b337",
+    "status": "settled",
+    "settlement_price": 64144686991652
+  },
+  {
+    "oracle_id": "0x6fbf183a8e27e128357d4cafabd329c167d7105d241307affba7443bde2d6975",
+    "status": "active",
+    "settlement_price": null
+  },
+  {
+    "oracle_id": "0xc10e10f1c8024a6d097d75dbac4c903c46d8d5bc86ac36f45fd2a5f46a9a3900",
+    "status": "settled",
+    "settlement_price": 64101814914882
+  },
+  {
+    "oracle_id": "0xdb532ff0c84fc5b9f047900d36462ad3e96d0fa692b88bda35cd2a18066476bb",
+    "status": "settled",
+    "settlement_price": 63964667604581
+  },
+  {
+    "oracle_id": "0xd90c65316decca8e908c0f24995806ddf7d3a0c96931021563adfc8037cc2f61",
+    "status": "settled",
+    "settlement_price": 63932075873602
+  },
+  {
+    "oracle_id": "0x2d3cd6c2ab9de9af678ca77e17c8b41b980c6708d0c7c394042457f346f55f6d",
+    "status": "settled",
+    "settlement_price": 63766273175077
+  },
+  {
+    "oracle_id": "0x1238e1805960c1e2ca10b859850ff107d5c720850facd6bf7d512903bc81434d",
+    "status": "settled",
+    "settlement_price": 64058215602927
+  },
+  {
+    "oracle_id": "0x32d6e0ab08a997ebff2a9f806b8d8ffcf1b2d9a7c38c204d78be42938e93bb0c",
+    "status": "settled",
+    "settlement_price": 64027318441378
+  },
+  {
+    "oracle_id": "0x2fcce2b079a69ce78847374ecad16bb4fe4df0d865be11a122fe41308e091d9b",
+    "status": "settled",
+    "settlement_price": 64131222970696
+  },
+  {
+    "oracle_id": "0xca876f3d5308615f540db0b86a63ee0c5e2ec01ff0f2bd997cb84017abdd2d1d",
+    "status": "settled",
+    "settlement_price": 64131840716554
+  },
+  {
+    "oracle_id": "0x7277c79fe924d27e7f042c48ab9eb799eb33c761be1240bfc6c5f82c05355f10",
+    "status": "settled",
+    "settlement_price": 64044915329490
+  },
+  {
+    "oracle_id": "0x9bd5896498578d8d829719a8ab0fa3cf5737fe0a188f3cfa95d41e3229556b94",
+    "status": "settled",
+    "settlement_price": 64111193064858
+  },
+  {
+    "oracle_id": "0x77bf42f3ed57d3298976c95894478e1d473d42a805485f60446a305e0069c4c7",
+    "status": "settled",
+    "settlement_price": 64071246818756
+  },
+  {
+    "oracle_id": "0xcb6491439578a4f9c0ee93a13a6a8ba0e223501b3668258b13c2f1b2b7704b72",
+    "status": "settled",
+    "settlement_price": 64133894538389
+  },
+  {
+    "oracle_id": "0x8da7fca03f7c24a0643d6db8f8fa68ff887d4a2b1e4290df9b863741991bdb60",
+    "status": "settled",
+    "settlement_price": 64221857941686
+  },
+  {
+    "oracle_id": "0x268eecdeb9b4f7416355c33b30f8c2a4219bf9598aa8915e5ff8fb579f2db085",
+    "status": "settled",
+    "settlement_price": 64185719896484
+  },
+  {
+    "oracle_id": "0x4786e85136d287e29d137b98c3715834f9b487dbbbe42044dc38b9e383b2a084",
+    "status": "settled",
+    "settlement_price": 64131467369996
+  },
+  {
+    "oracle_id": "0xb707f9e284f3c4d5d933bec0109b5afbffaf5c8d12ef7cd6118cdbc1805f5903",
+    "status": "settled",
+    "settlement_price": 64073076094389
+  },
+  {
+    "oracle_id": "0x1d4949b5be50cc94e28fc4eb63f4e6b45f1a924896533638716282b21700af7f",
+    "status": "settled",
+    "settlement_price": 63981842847800
+  },
+  {
+    "oracle_id": "0x7a123831448e6f12612a65bc441891804d820c80b0509ac54cb97a5083cf7f76",
+    "status": "settled",
+    "settlement_price": 63957807191225
+  },
+  {
+    "oracle_id": "0xafa16ef458d14042c5d035197bdf4d336013112cccffec61ce8662bfa17be49f",
+    "status": "settled",
+    "settlement_price": 63992357628642
+  },
+  {
+    "oracle_id": "0x19f7243de765e5583e7752f7cbafc50fa1af9b78f9ca795562b1f996f812f593",
+    "status": "settled",
+    "settlement_price": 64071530037920
+  },
+  {
+    "oracle_id": "0x416d466de685d3c196079b52e00e08c72b68dd82d32b77847d9083f10b197bd1",
+    "status": "settled",
+    "settlement_price": 63965671460375
+  },
+  {
+    "oracle_id": "0x04d50b93c01378973607d3f7fdb560df1351060fca651f887c5a2aff5706af37",
+    "status": "settled",
+    "settlement_price": 64091557435619
+  },
+  {
+    "oracle_id": "0xee530bc45e4b36746d7f6e032c386df4c2cc50f8d8138227197ab0dc58584b5b",
+    "status": "settled",
+    "settlement_price": 64047570248499
+  },
+  {
+    "oracle_id": "0x32e40d7e3ae2c0bfa23ae6d0f77ad0c5a9568db487b6a08238098ddde538beeb",
+    "status": "settled",
+    "settlement_price": 64143183982891
+  },
+  {
+    "oracle_id": "0x21ee1fd028a49cf42d38f9874ef1103c5ec8d75d98f5746dca5df83431dee933",
+    "status": "settled",
+    "settlement_price": 63980625293125
+  },
+  {
+    "oracle_id": "0x611a125d1c3984c1a3e5f97fe0b5ffda5857a3d20cf8683ee16740fa4cb4bd4e",
+    "status": "settled",
+    "settlement_price": 63946747083877
+  },
+  {
+    "oracle_id": "0x18fa7829478685632d2453d8fd066c3779baefca4b6be0ae416b55e8e3e179c3",
+    "status": "settled",
+    "settlement_price": 63997446817953
+  },
+  {
+    "oracle_id": "0x535b0b11829ab1ae1eddbf478146f1ff46c9039410d75784d4af5ce7553d94a1",
+    "status": "settled",
+    "settlement_price": 64068380176198
+  },
+  {
+    "oracle_id": "0xf11f580e35fc658313195c8fcacf1937fde333a7367e41084bc17ade0c0e75aa",
+    "status": "settled",
+    "settlement_price": 64217146241506
+  },
+  {
+    "oracle_id": "0xe434bb7c4e2aa0e2289b475abb725f64866cafee50f148bded300fec610c55cb",
+    "status": "settled",
+    "settlement_price": 64323115829118
+  },
+  {
+    "oracle_id": "0xc03cef0ef1adebfb7234c3829035e5d17b2923a814e7e92fde392d754f460675",
+    "status": "settled",
+    "settlement_price": 64304288689113
+  },
+  {
+    "oracle_id": "0x1717116c12a43de4ee296751bce466dd30560031a122cd871099144102fb8930",
+    "status": "settled",
+    "settlement_price": 64071602853388
+  },
+  {
+    "oracle_id": "0xececde4083ef131dcba32c1a2de7e23485343f9f61b6658a601b0ef64991a2b3",
+    "status": "settled",
+    "settlement_price": 64275839596106
+  },
+  {
+    "oracle_id": "0x5818cf653e70af3c33cf3856d52ec6c7954bf9a1aa00e2293583e6ce004b47dd",
+    "status": "settled",
+    "settlement_price": 64227007387175
+  },
+  {
+    "oracle_id": "0x544184b32ac257a2ec7371410ddb5fc3e94cecdd3a07e60f01fce6822923b297",
+    "status": "settled",
+    "settlement_price": 64204677213471
+  },
+  {
+    "oracle_id": "0x5e6005ab012bd264da2ccea09d5cee385e0c9d91ccb1b68362d4d98fc011b97e",
+    "status": "settled",
+    "settlement_price": 64111145071258
+  },
+  {
+    "oracle_id": "0x48fc8f3e7ff762e6cfb5ababb7b5235c7c6ba71c962fe0fea72e72979a31f400",
+    "status": "settled",
+    "settlement_price": 64059857689926
+  },
+  {
+    "oracle_id": "0x23ba9f11d4c3216b76e71fb15f1a2132d62b760fecea4f99506b58fa054ea330",
+    "status": "settled",
+    "settlement_price": 63977297380397
+  },
+  {
+    "oracle_id": "0x2b38a23f401d87bb45020eddcdf6b92ef4e824e82d612f617b8dfbfd98507e70",
+    "status": "settled",
+    "settlement_price": 63896194308259
+  },
+  {
+    "oracle_id": "0x1608a705645002b622a56d65adf389c23de6062c1d8797e69ea02c2c0e7a1d72",
+    "status": "active",
+    "settlement_price": null
+  },
+  {
+    "oracle_id": "0x7ea05796a104098406d657a838f5db3f011f0dc9eec04f75d1dc906d52f36e1a",
+    "status": "settled",
+    "settlement_price": 64100896355976
+  },
+  {
+    "oracle_id": "0x4281a3c503059b79bfa5eaaaf1bec96aee849287dcec136dd751413cde6ae005",
+    "status": "settled",
+    "settlement_price": 63894043198918
+  },
+  {
+    "oracle_id": "0xe94edd0c055ddb912ca0aa47391a9b7f6b9ba8baa87185f199cd2331bfb6243a",
+    "status": "settled",
+    "settlement_price": 63976669770004
+  },
+  {
+    "oracle_id": "0x3e9385b7d7cd704e5ba918b9978ae1e000a555779f583aabbd03a6a591a4ff41",
+    "status": "settled",
+    "settlement_price": 64041624975872
+  },
+  {
+    "oracle_id": "0xce96c6fe35074b8add537fc8d601bc582b9d214db847df17020c6d14806389c5",
+    "status": "settled",
+    "settlement_price": 64295585463858
+  },
+  {
+    "oracle_id": "0x159bbca0047fd25e728d14f2d7b0ed719276caaadaf1461ec6df5f3fcc426e40",
+    "status": "settled",
+    "settlement_price": 64181123004569
+  },
+  {
+    "oracle_id": "0x0acbb0eaf178b46ebd24c5670c53bd729b07c8be8696e2278722b61e7fb11843",
+    "status": "settled",
+    "settlement_price": 64097687200932
+  },
+  {
+    "oracle_id": "0x7db1771c33699253d34445f271316bb3640a015a4cc8eb5242d9260b912054b0",
+    "status": "settled",
+    "settlement_price": 64180558801935
+  },
+  {
+    "oracle_id": "0xcdc185e7487c1d48b1dd402a9c6a1c5f65dc2e184f03014c7a0a2d036c611aa4",
+    "status": "settled",
+    "settlement_price": 64130784403144
+  },
+  {
+    "oracle_id": "0x752605ed1e17df973a5a9c773ebb97d2f469baf7de44b5934a58ae7529c6620f",
+    "status": "settled",
+    "settlement_price": 64234595776508
+  },
+  {
+    "oracle_id": "0x8e864626b1e4cd00ee4f5657f96592af77d28c4fdd278db1fd15cb02397223f6",
+    "status": "settled",
+    "settlement_price": 64186015737802
+  },
+  {
+    "oracle_id": "0x11839808a02da42536238fb887d4be53fce1242a4a140984d9529fe2526489d3",
+    "status": "settled",
+    "settlement_price": 64139700880057
+  },
+  {
+    "oracle_id": "0xbba1a3e34989e8a027209b591ffbc7ebe9385c60120def27a18c22e2df58bab4",
+    "status": "settled",
+    "settlement_price": 63938509322524
+  },
+  {
+    "oracle_id": "0xbe9733f7d5d372e4543c0ddf4e116418966fb9f9b938cb749f775f5a3674b673",
+    "status": "settled",
+    "settlement_price": 64220821000132
+  },
+  {
+    "oracle_id": "0xb015956238dbebb475784de45367c0cd72bbea1d83c54ab45a6c5b5fb721bd3e",
+    "status": "settled",
+    "settlement_price": 64221814951313
+  },
+  {
+    "oracle_id": "0x18d4306b4c346921ede7bc05e25411fb1865d1e7c9f333969bdd5db3575a92e5",
+    "status": "settled",
+    "settlement_price": 64162806830766
+  },
+  {
+    "oracle_id": "0x5a26a027f9ef647fec6799661916201017dcb088d6278271c770f235cd345129",
+    "status": "settled",
+    "settlement_price": 64412471374685
+  },
+  {
+    "oracle_id": "0x41d267cd25b006756b520790c951ca9b2953d4beec1813ceaf37db07a50c055c",
+    "status": "settled",
+    "settlement_price": 64454097270113
+  },
+  {
+    "oracle_id": "0x7fccf4ab9a1cb41891da9b4b07d043988f6ad5777e7f6c5d2a43d92021b70517",
+    "status": "settled",
+    "settlement_price": 64327994478710
+  },
+  {
+    "oracle_id": "0xed2cc924940c74b0eed46f174e2cecf5dee602ef1f4246b8d2acc35c31af3159",
+    "status": "settled",
+    "settlement_price": 64224592091576
+  },
+  {
+    "oracle_id": "0xab74074979df2e8c002b7031cb5e183ffa961db4872c5bc850eb5b2c544a84d6",
+    "status": "settled",
+    "settlement_price": 64370980454419
+  },
+  {
+    "oracle_id": "0xdca7f7649f81d1a428a5e9ce49285f28aea7af8cef9b5a04349c2e1ec8effd8f",
+    "status": "settled",
+    "settlement_price": 64293660817657
+  },
+  {
+    "oracle_id": "0xde06b802f39105307778d99ee41914e7482da9c3d420affb94959de31abf482e",
+    "status": "settled",
+    "settlement_price": 64227805740747
+  },
+  {
+    "oracle_id": "0x96fb672b83c83fc76917d8478e31d1e16f02f82b21ac3b841dedad8205c3af0d",
+    "status": "settled",
+    "settlement_price": 64180661257703
+  },
+  {
+    "oracle_id": "0x404530a3408e8107fc1b7df7471a19406e4d9755070d63b377f5cc6d255875c3",
+    "status": "settled",
+    "settlement_price": 64170424161721
+  },
+  {
+    "oracle_id": "0x09db53da2388a1f9aef0247c557a722a385b146517a0dc780ca496bbee7ba682",
+    "status": "settled",
+    "settlement_price": 64154777737330
+  },
+  {
+    "oracle_id": "0xfb07b90bc8c58ef751675a0f7dfef8c843d27d511f0234b4ea7ac45c4215b05e",
+    "status": "settled",
+    "settlement_price": 64186486149353
+  },
+  {
+    "oracle_id": "0xb669130d1f08d8eca5498db4364589e1a109bc7e482c92d341fa00e8262e1193",
+    "status": "settled",
+    "settlement_price": 64206144813059
+  },
+  {
+    "oracle_id": "0xa7606f1eb9ca741c1eb755c738725b0d1377fa5487a888406ea82697f472119a",
+    "status": "settled",
+    "settlement_price": 64180108749083
+  },
+  {
+    "oracle_id": "0xb2c97fb505330f88f4a4244d80b7fc6a9b18360392c4f600c5fb0a8739a812e6",
+    "status": "settled",
+    "settlement_price": 64169361123904
+  },
+  {
+    "oracle_id": "0x0b08725f775f51a65de9ac51606ffd223f295b0b47a5836afe33631e0e190818",
+    "status": "settled",
+    "settlement_price": 64186038015449
+  },
+  {
+    "oracle_id": "0x76a29498133f20843c4a271b885680af69364e321d2dc6c4e4d5ad59b53f8ae3",
+    "status": "settled",
+    "settlement_price": 64352073213678
+  },
+  {
+    "oracle_id": "0xf13d45549df4abc5bdde3f9c1dd60ba96ac2a09dec3807a08dbb50874f1bfc84",
+    "status": "settled",
+    "settlement_price": 64216705846478
+  },
+  {
+    "oracle_id": "0xd8d4a8954cf8c9d1cf8e4ba8fe6e66db00e2f7cd91f64d0331e60bd4500a4c91",
+    "status": "settled",
+    "settlement_price": 64197419935406
+  },
+  {
+    "oracle_id": "0xb59975eaa3bc209e156d67a2a7f22de8180aa148b9c0a16350de25b90d0dd770",
+    "status": "settled",
+    "settlement_price": 64185119002585
+  },
+  {
+    "oracle_id": "0x7dcdcc45bd875557437ad2fd113e7d31ed52b8aff1dc41bf206cfd39d6b622af",
+    "status": "settled",
+    "settlement_price": 64170294830124
+  },
+  {
+    "oracle_id": "0xc20c8f4958e8f647156ee218269ef6ad7ace1a3a46f36207dcee479cbf74002a",
+    "status": "settled",
+    "settlement_price": 64237216504522
+  },
+  {
+    "oracle_id": "0x2d16cfc8c31db35f237188feb6609d110eed552aae30fea47c14bc49f3567d41",
+    "status": "settled",
+    "settlement_price": 64201439105210
+  },
+  {
+    "oracle_id": "0x412b39da173e177bbee236c4c77409fb5f73cd85169d6ee2243011e5ad98aa44",
+    "status": "settled",
+    "settlement_price": 64189370320986
+  },
+  {
+    "oracle_id": "0xacc9230f8e6d992baa5a5803ea2f63bc23ccfe68d423a17d1fc68cbc07e3721d",
+    "status": "settled",
+    "settlement_price": 64165635911534
+  },
+  {
+    "oracle_id": "0x4eb4b5fb9d0dc006610ad47d429213e4067ef4110ecca322307ed8c0a00be4ed",
+    "status": "settled",
+    "settlement_price": 64209505481291
+  },
+  {
+    "oracle_id": "0xd4b68885c4b3e014d24053a727dcc125df437de3ad455314621d0bed126a6ff2",
+    "status": "settled",
+    "settlement_price": 64216422283091
+  },
+  {
+    "oracle_id": "0x460899d83b6c33745595c67bc26d74b4a7fae5a377ddae04868170a60b482665",
+    "status": "settled",
+    "settlement_price": 64059489579847
+  },
+  {
+    "oracle_id": "0xa926a25f29c5993c5b074fabb8f11737c295891446b3cb39083eee8dd738ca27",
+    "status": "settled",
+    "settlement_price": 64222871537647
+  },
+  {
+    "oracle_id": "0xf8e0d78d517bd765f770799f9320223c5fc3c9005743b10b69b48adc04d49907",
+    "status": "settled",
+    "settlement_price": 63958243029450
+  },
+  {
+    "oracle_id": "0xd077a45f3b7b557454057250bb2ea59ca3311c5f6ae5c9fc9524d0ec23d99643",
+    "status": "settled",
+    "settlement_price": 63867256065369
+  },
+  {
+    "oracle_id": "0x7fc1e0ef7554e0d74e8ecf27c23175938950358c4ba8f379c65861303d691671",
+    "status": "settled",
+    "settlement_price": 63920173993757
+  },
+  {
+    "oracle_id": "0x63df06e146c47deb1dda36004f0e61d5987b200079ff056e0c0d7c2899e1debd",
+    "status": "settled",
+    "settlement_price": 64235358225837
+  },
+  {
+    "oracle_id": "0xabf61d3069479fc0080e1418f9619e88c6923eb855e0a23f88f38f2aec080716",
+    "status": "settled",
+    "settlement_price": 63804783953108
+  },
+  {
+    "oracle_id": "0x68276e4eb4e1188b558585f3d69b10655a0cdbd133ef2262a83103e2ca20226e",
+    "status": "settled",
+    "settlement_price": 63840215267050
+  },
+  {
+    "oracle_id": "0xb6a4c1558462088b7e871f1ee99a746ef3d6641e4d099faee59c3196aea994be",
+    "status": "settled",
+    "settlement_price": 63888827162542
+  },
+  {
+    "oracle_id": "0xc897d9404b558ac8e2e7fda267f3bf260cd8a842920913667885074df9eb37e2",
+    "status": "settled",
+    "settlement_price": 64192411637023
+  },
+  {
+    "oracle_id": "0x13d5325472a2b4e2c316782a31b8aa3a016ca0c3429a84f6053b3c63f4471b72",
+    "status": "settled",
+    "settlement_price": 63882536464291
+  },
+  {
+    "oracle_id": "0x800e810dc83077da19026e971eba2092666fdcff9bd4ac7b6b39174768a0bda6",
+    "status": "settled",
+    "settlement_price": 63797340051342
+  },
+  {
+    "oracle_id": "0x43ca27d5aa8285ee6bd680e0e0e5f8403cb2d439139aaf0db95f9ff7cdad8317",
+    "status": "settled",
+    "settlement_price": 63842939734574
+  },
+  {
+    "oracle_id": "0xf408ad8e08928395a59eca5be3aa6289231a452d06088d8d00f610eb236278a2",
+    "status": "settled",
+    "settlement_price": 63930404717685
+  },
+  {
+    "oracle_id": "0x686519682f72d42eeaca9e0ba7e91eee364a32b022d6b463e59dc8a07c3eb6cb",
+    "status": "settled",
+    "settlement_price": 63744944095399
+  },
+  {
+    "oracle_id": "0x9d0658a7bfcc2f003a064d535a6a4fc450a6ff1d4d61416886b1e643ac2e81d8",
+    "status": "settled",
+    "settlement_price": 63817316866417
+  },
+  {
+    "oracle_id": "0x047a91db5cb1d7c76ac223652467c541b77260bd820966fccd71b6a9a79bde23",
+    "status": "settled",
+    "settlement_price": 63763544021537
+  },
+  {
+    "oracle_id": "0x419c2e063087f9667b12e7f176ccb418e21671bef41fe1ea5af8d8dbe70be9bd",
+    "status": "settled",
+    "settlement_price": 63863210470126
+  },
+  {
+    "oracle_id": "0xf26c833a46ad14e6df6fa880f6c8b5b9a3a7fd10f26336b97bed70ce6eebe077",
+    "status": "settled",
+    "settlement_price": 63800115626206
+  },
+  {
+    "oracle_id": "0xadbb31f33a6716c53051169b9546fd27db5d0db5d9f86fd4f74a79f446c10995",
+    "status": "settled",
+    "settlement_price": 63919619129912
+  },
+  {
+    "oracle_id": "0x60b691dec2609f0ccca256d8ed83074ef6d08063bbe598b9422362da2a087be5",
+    "status": "settled",
+    "settlement_price": 63885394004915
+  },
+  {
+    "oracle_id": "0xf6763666cf9e736cf20fd6af0d4b779a3918a49e00a3e7f4e8e8874a5e513063",
+    "status": "settled",
+    "settlement_price": 63870643093728
+  },
+  {
+    "oracle_id": "0x75148d75e48d082210f97272535bd50bd83fbd47e52230161bd16dedd8232f14",
+    "status": "settled",
+    "settlement_price": 63931330928317
+  },
+  {
+    "oracle_id": "0x75c2aec22ad83ee7461e6b8d6b06aad84bd68c2b154232328ec0c9a96112ea99",
+    "status": "settled",
+    "settlement_price": 63931695566279
+  },
+  {
+    "oracle_id": "0x2b6723b5ad64437d34fbc58364674ed555974a16610a957498a70e28939e6c3d",
+    "status": "settled",
+    "settlement_price": 63934745964884
+  },
+  {
+    "oracle_id": "0xcd3d7f7ee2c6615a07c9c4c30bfe27ef14e151cef91dacecb6ba401aa6cf164c",
+    "status": "settled",
+    "settlement_price": 63726151245947
+  },
+  {
+    "oracle_id": "0xc89973b9da6f3ee49360afd8673ec6d7143a84e90fe9a465fe7bd9e4101a944e",
+    "status": "settled",
+    "settlement_price": 64060006731101
+  },
+  {
+    "oracle_id": "0x26862ea1e0295487d5d4c9b8983ab7a8cc979666a450902c7afaff9023b05176",
+    "status": "settled",
+    "settlement_price": 64146427543245
+  },
+  {
+    "oracle_id": "0x259073dda01936e9bed532265a6381886b225c901db2c6bd61086e3be04f4d2b",
+    "status": "settled",
+    "settlement_price": 63939358989708
+  },
+  {
+    "oracle_id": "0x7076b7c9fa674a4328ebaeed0a87aac5d2b913ba937a754ea1e92ac4cc61c50a",
+    "status": "settled",
+    "settlement_price": 63781396102533
+  },
+  {
+    "oracle_id": "0xbec516a85d678b2af6839110112fbafe5cb5e8f6c80d187a422486923317fd85",
+    "status": "settled",
+    "settlement_price": 63440904584779
+  },
+  {
+    "oracle_id": "0x509f610dc251af66fa80e73ddcecde1d13eb9b76688b051a535c99dccf4908e7",
+    "status": "settled",
+    "settlement_price": 63307835271583
   },
   {
     "oracle_id": "0x4f406504967179f5510730d43f31750d83a2d9bf4655acaa491fff3f4f518da4",
-    "status": "active",
-    "settlement_price": null
+    "status": "settled",
+    "settlement_price": 63165817178129
   },
   {
     "oracle_id": "0xf34f0f61039f9290404b89dd56654f266f6b4ee559379cbb4b07899892d172e3",
-    "status": "active",
-    "settlement_price": null
+    "status": "settled",
+    "settlement_price": 63938819033656
   },
   {
     "oracle_id": "0xf893c49b5449fb41e84e71bdc374c94296ff80161d1547219e8909da06c7249a",
-    "status": "active",
-    "settlement_price": null
+    "status": "settled",
+    "settlement_price": 63400753770272
   },
   {
     "oracle_id": "0x828b28349daf715f8dd43fc9d946ce721a4be6b2e8ac8b1c562b855625fefb5c",
-    "status": "active",
-    "settlement_price": null
+    "status": "settled",
+    "settlement_price": 63291262509389
   },
   {
     "oracle_id": "0xf4766bc557d9dbf71f76e15a0caf04c80cc718bf3b6505896663e9ecf04e435c",
-    "status": "active",
-    "settlement_price": null
+    "status": "settled",
+    "settlement_price": 63528376768959
   },
   {
     "oracle_id": "0xac9c7d3549b98fa2a9abe94d492e7c5424dd750e664167f694f85e7f629b48a1",
-    "status": "active",
-    "settlement_price": null
+    "status": "settled",
+    "settlement_price": 64094318404520
   },
   {
     "oracle_id": "0xd2ac1536478689cd9abacefe00c0dcefa235c1d742f274f1ffeecc762940d5c7",
-    "status": "active",
-    "settlement_price": null
+    "status": "settled",
+    "settlement_price": 63566692753695
   },
   {
     "oracle_id": "0xea3942065a553ed8f3b479a376bdb28d31079fb34e7b8c87d97539429dd112eb",
@@ -51,8 +701,8 @@
   },
   {
     "oracle_id": "0x478a3cfac429114c6ea03b24b86ab1f46f3bd2bf91c44260fd489678bdd01166",
-    "status": "active",
-    "settlement_price": null
+    "status": "settled",
+    "settlement_price": 63912578415819
   },
   {
     "oracle_id": "0x36e7c02bd920fcf8719bb09a6b3f270e8351541d2bc971cc4d0ec23dfce71f6c",
@@ -71,8 +721,8 @@
   },
   {
     "oracle_id": "0xb9e63cdfc18366d4d2875bb97cfeda15717e766ccec5b4b15c809bfd93bc6cf6",
-    "status": "active",
-    "settlement_price": null
+    "status": "settled",
+    "settlement_price": 63326042830108
   },
   {
     "oracle_id": "0x850b0fcf9324013e11bf3e340fc27849741560952413e2d977c65df69beb996c",
@@ -91,8 +741,8 @@
   },
   {
     "oracle_id": "0xa5c6338b0068da3171578be6b0db5ebab283da59e81928ffa30f5348134535c0",
-    "status": "active",
-    "settlement_price": null
+    "status": "settled",
+    "settlement_price": 63584456915421
   },
   {
     "oracle_id": "0x8e4344007a3c4027c3007226ef74c12b27c89856ddbdfb0005772baa99c547e3",
@@ -1556,8 +2206,8 @@
   },
   {
     "oracle_id": "0x06b08892b68b0e82e5222f73e39dab8203a4f0cd41cc59b2ea6d78e55d9ed6ea",
-    "status": "active",
-    "settlement_price": null
+    "status": "settled",
+    "settlement_price": 64122708915476
   },
   {
     "oracle_id": "0x5019d8eff5ccd1320b3babe1e0532e5666a1852891e96045d74e2352e9f7384f",

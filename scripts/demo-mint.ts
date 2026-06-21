@@ -137,6 +137,64 @@ async function mint(
   return res.digest
 }
 
+async function mintRange(
+  client:      SuiClient,
+  kp:          Ed25519Keypair,
+  managerId:   string,
+  oracle:      ApiOracle,
+  lowerStrike: bigint,
+  upperStrike: bigint,
+  coins:       Coin[],
+): Promise<string> {
+  const quantity = QUANTITY_FACE * DUSDC_SCALE
+  const total    = coins.reduce((s, c) => s + BigInt(c.balance), 0n)
+  if (total < quantity)
+    throw new Error(`Insufficient DUSDC: have $${Number(total)/1e6}, need $${Number(quantity)/1e6}`)
+
+  const tx      = new Transaction()
+  const primary = tx.object(coins[0].coinObjectId)
+  if (coins.length > 1)
+    tx.mergeCoins(primary, coins.slice(1).map(c => tx.object(c.coinObjectId)))
+
+  const [depositCoin] = tx.splitCoins(primary, [tx.pure.u64(quantity)])
+  tx.moveCall({
+    target: `${PREDICT_PKG}::predict_manager::deposit`,
+    typeArguments: [DUSDC_TYPE],
+    arguments: [tx.object(managerId), depositCoin],
+  })
+
+  const key = tx.moveCall({
+    target: `${PREDICT_PKG}::range_key::new`,
+    arguments: [
+      tx.pure.id(oracle.oracle_id),
+      tx.pure.u64(BigInt(oracle.expiry)),
+      tx.pure.u64(lowerStrike),
+      tx.pure.u64(upperStrike),
+    ],
+  })
+
+  tx.moveCall({
+    target: `${PREDICT_PKG}::predict::mint_range`,
+    typeArguments: [DUSDC_TYPE],
+    arguments: [
+      tx.object(PREDICT_OBJ),
+      tx.object(managerId),
+      tx.object(oracle.oracle_id),
+      key,
+      tx.pure.u64(quantity),
+      tx.object(CLOCK),
+    ],
+  })
+
+  const res = await client.signAndExecuteTransaction({
+    transaction: tx, signer: kp,
+    options: { showEffects: true },
+  })
+  if (res.effects?.status.status !== "success")
+    throw new Error(`mint_range failed: ${JSON.stringify(res.effects?.status)}`)
+  return res.digest
+}
+
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 const kp      = loadKeypair()
@@ -164,19 +222,29 @@ const oracle      = oracles[0]
 const minStrike   = BigInt(oracle.min_strike)
 const strike      = spotMist > minStrike ? spotMist : minStrike
 const strikeFmt   = `$${(Number(strike) / 1e9).toLocaleString()}`
+
+// Range: $1,000 band centred on spot ($500 above and below).
+// Narrower than binary strike cushion — SVI model is stricter for range pricing.
+const rangeCentre  = BigInt(spotUsd)                        // already $1k-aligned
+const HALF_BAND    = 500n
+const lowerStrike  = (rangeCentre - HALF_BAND) * PRICE_SCALE
+const upperStrike  = (rangeCentre + HALF_BAND) * PRICE_SCALE
+const rangeFmt     = `$${(rangeCentre - HALF_BAND).toLocaleString()} – $${(rangeCentre + HALF_BAND).toLocaleString()}`
+
 const expiresIn   = Math.round((oracle.expiry - Date.now()) / 3_600_000)
 console.log(`Oracle:  ${oracle.oracle_id}`)
 console.log(`Asset:   ${oracle.underlying_asset}`)
 console.log(`Expiry:  ${new Date(oracle.expiry).toISOString()} (~${expiresIn}h from now)`)
 console.log(`Spot:    $${spotUsd.toLocaleString()} (Binance)`)
-console.log(`Strike:  ${strikeFmt}\n`)
+console.log(`Strike:  ${strikeFmt}  (binary)`)
+console.log(`Range:   ${rangeFmt}  (range, $1k band)\n`)
 
-// 2. DUSDC balance
+// 2. DUSDC balance — need $5 × 3 = $15 (UP + DOWN + range)
 const coins  = await getDusdc(client, address)
 const total  = coins.reduce((s, c) => s + BigInt(c.balance), 0n)
 console.log(`DUSDC:   $${Number(total) / 1e6}`)
-if (total < QUANTITY_FACE * DUSDC_SCALE * 2n) {
-  console.error(`\nNeed at least $${Number(QUANTITY_FACE * 2n)} DUSDC (UP + DOWN).`)
+if (total < QUANTITY_FACE * DUSDC_SCALE * 3n) {
+  console.error(`\nNeed at least $${Number(QUANTITY_FACE * 3n)} DUSDC (UP + DOWN + range).`)
   console.error(`Ask the DeepBook team to mint DUSDC to your address, or use the predict workshop faucet.`)
   process.exit(1)
 }
@@ -191,17 +259,24 @@ if (managerId) {
 }
 
 // 4. Mint UP
-console.log(`Minting UP  ($${QUANTITY_FACE} face @ ${strikeFmt})…`)
+console.log(`Minting UP    ($${QUANTITY_FACE} face @ ${strikeFmt})…`)
 const upTx = await mint(client, kp, managerId, oracle, "up", strike, coins)
 console.log(`  tx: ${upTx}`)
 
-// Re-fetch coins — balance changed
-const freshCoins = await getDusdc(client, address)
+// Re-fetch coins — balance changed after each tx
+const coins2 = await getDusdc(client, address)
 
 // 5. Mint DOWN
-console.log(`Minting DOWN ($${QUANTITY_FACE} face @ ${strikeFmt})…`)
-const downTx = await mint(client, kp, managerId, oracle, "down", strike, freshCoins)
+console.log(`Minting DOWN  ($${QUANTITY_FACE} face @ ${strikeFmt})…`)
+const downTx = await mint(client, kp, managerId, oracle, "down", strike, coins2)
 console.log(`  tx: ${downTx}`)
+
+const coins3 = await getDusdc(client, address)
+
+// 6. Mint RANGE
+console.log(`Minting RANGE ($${QUANTITY_FACE} face, band ${rangeFmt})…`)
+const rangeTx = await mintRange(client, kp, managerId, oracle, lowerStrike, upperStrike, coins3)
+console.log(`  tx: ${rangeTx}`)
 
 console.log(`
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -209,7 +284,9 @@ console.log(`
 
   Oracle:   ${oracle.oracle_id}
   Asset:    ${oracle.underlying_asset}
-  Strike:   ${strikeFmt}
   Expiry:   ${new Date(oracle.expiry).toISOString()}
   Manager:  ${managerId}
+
+  Binary strike:  ${strikeFmt}  (UP + DOWN)
+  Range band:     ${rangeFmt}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`)

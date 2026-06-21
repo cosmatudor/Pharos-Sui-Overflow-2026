@@ -111,9 +111,9 @@ export default function JoinPage({ onBack }: { onBack: () => void }) {
             ← Dashboard
           </button>
           <div className="join-titlebar-text">
-            <h1 className="join-titlebar-h1">Run a Keeper Node</h1>
+            <h1 className="join-titlebar-h1">Run a Pharos Keeper</h1>
             <p className="join-titlebar-sub">
-              5 steps · ~10 minutes · no technical knowledge required
+              5 steps · ~10 minutes · open to anyone
             </p>
           </div>
           <div className="join-titlebar-badge">
