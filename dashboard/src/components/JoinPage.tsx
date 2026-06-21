@@ -401,7 +401,7 @@ export default function JoinPage({ onBack }: { onBack: () => void }) {
                   <div className="join-launch-num">1</div>
                   <div className="join-launch-body">
                     <div className="join-launch-label">Clone the keeper repository</div>
-                    <CodeBlock label="terminal" code={"git clone https://github.com/your-org/keeper\ncd keeper"} />
+                    <CodeBlock label="terminal" code={"git clone https://github.com/cosmatudor/Pharos-Sui-Overflow-2026\ncd Pharos-Sui-Overflow-2026/keeper"} />
                   </div>
                 </div>
 
