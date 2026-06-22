@@ -223,7 +223,3 @@ Stores per-manager opt-in/opt-out tip preferences on-chain. **V1 scaffolding** �
 5. **Multi-asset** — PTB type tag is currently hardcoded to dUSDC; parameterize for other DeepBook Predict quote currencies
 6. **Keeper leaderboard** — `jobs_completed` is tracked on-chain; surface it more prominently in the dashboard
 7. **Mainnet deployment** — update package IDs, fund treasury, run extended soak test before going live
-
-## License
-
-MIT — add a `LICENSE` file to the repo if you want this to be enforceable.
